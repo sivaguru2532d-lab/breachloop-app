@@ -1,0 +1,178 @@
+{
+  "id": "compromised-role",
+  "name": "Compromised Developer Role",
+  "description": "A compromised developer role pivots into administrative access and exfiltrates application secrets.",
+  "scenario_type": "attack",
+  "events": [
+    {
+      "event_id": "evt-01",
+      "event_time": "2026-01-01T09:00:00Z",
+      "action": "sts:AssumeRole",
+      "service": "sts",
+      "actor_arn": "arn:aws:iam::123456789012:user/alice",
+      "target_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "AssumeRole",
+        "userIdentity": {
+          "type": "IAMUser",
+          "principalId": "AIDAEXAMPLE01",
+          "arn": "arn:aws:iam::123456789012:user/alice",
+          "userName": "alice"
+        }
+      }
+    },
+    {
+      "event_id": "evt-02",
+      "event_time": "2026-01-01T09:01:00Z",
+      "action": "secretsmanager:GetSecretValue",
+      "service": "secretsmanager",
+      "actor_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "target_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-db-creds",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetSecretValue",
+        "requestParameters": {
+          "secretId": "prod-db-creds"
+        }
+      }
+    },
+    {
+      "event_id": "evt-03",
+      "event_time": "2026-01-01T09:02:00Z",
+      "action": "s3:GetObject",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "target_arn": "arn:aws:s3:::finance-ledger",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetObject",
+        "requestParameters": {
+          "bucketName": "finance-ledger"
+        }
+      }
+    }
+  ],
+  "principals": [
+    {
+      "id": "principal-alice",
+      "name": "Alice",
+      "type": "Principal",
+      "arn": "arn:aws:iam::123456789012:user/alice",
+      "is_compromised": true
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-developer",
+      "name": "DeveloperRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "trust_policy": {
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "arn:aws:iam::123456789012:user/alice"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    },
+    {
+      "id": "role-admin",
+      "name": "AdminRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/AdminRole",
+      "trust_policy": {
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "arn:aws:iam::123456789012:role/DeveloperRole"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource-secret",
+      "name": "Production DB Secrets",
+      "type": "SecretsManager",
+      "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-db-creds",
+      "is_sensitive": true,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    },
+    {
+      "id": "resource-finance-ledger",
+      "name": "Finance Ledger",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::finance-ledger",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    }
+  ],
+  "workloads": [
+    {
+      "id": "workload-export",
+      "name": "Data Export Lambda",
+      "type": "Lambda",
+      "arn": "arn:aws:lambda:us-east-1:123456789012:function:export",
+      "execution_role_arn": "arn:aws:iam::123456789012:role/DeveloperRole"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "billing-export",
+      "name": "Billing Export",
+      "description": "Exports the monthly ledger to the finance bucket.",
+      "principal_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "required_action": "s3:GetObject",
+      "target_resource_arn": "arn:aws:s3:::finance-ledger",
+      "criticality": "High"
+    }
+  ],
+  "candidate_remediations": [
+    {
+      "id": "fix-broad-01",
+      "title": "Revoke all active role sessions",
+      "remediation_type": "revoke_role_sessions",
+      "target_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+      "parameters": {
+        "role_arn": "arn:aws:iam::123456789012:role/DeveloperRole"
+      },
+      "description": "Invalidate all active sessions for the developer role to stop lateral movement.",
+      "is_broad": true
+    },
+    {
+      "id": "fix-narrow-01",
+      "title": "Remove developer access to production secrets",
+      "remediation_type": "remove_resource_permission",
+      "target_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-db-creds",
+      "parameters": {
+        "denied_principal_arn": "arn:aws:iam::123456789012:role/DeveloperRole",
+        "denied_action": "secretsmanager:GetSecretValue",
+        "denied_resource_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-db-creds"
+      },
+      "description": "Block only this specific role from reading the compromised secret while leaving normal business access intact.",
+      "is_broad": false
+    }
+  ],
+  "ground_truth": {
+    "expected_broad_remediation_status": "rejected",
+    "expected_narrow_remediation_status": "verified",
+    "expected_broad_remediation_broken_workflow": "billing-export"
+  }
+}
