@@ -97,7 +97,7 @@ errors — `400` for a missing `scenario_id`, `404` for an unknown scenario.
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm test` | end-to-end suites against two live `next start` servers — needs `.next/`, so build first |
 | `npm run test:e2e` | `next build` followed by `npm test`, i.e. the suites with their prerequisite |
-| `npm run verify` | typecheck → build → test (the whole gate, from a clean checkout) |
+| `npm run verify` | the whole gate from a clean checkout: typecheck → build → test |
 | `npm run reference:install\|serve\|test` | the optional Python reference implementation |
 | `npm run dev:with-reference` | Next dev server + uvicorn side by side (parity debugging) |
 
