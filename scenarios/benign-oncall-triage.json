@@ -1,0 +1,125 @@
+{
+  "id": "benign-oncall-triage",
+  "name": "On-Call Triage Reads",
+  "description": "The on-call triage role lists objects and reads a sanitized error dump to debug a customer report. Read volume is unusual, but authorized.",
+  "scenario_type": "benign",
+  "events": [
+    {
+      "event_id": "evt-oc-1",
+      "event_time": "2026-08-14T23:05:12Z",
+      "action": "s3:ListBucket",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+      "target_arn": null,
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "ListBucket",
+        "requestParameters": {
+          "bucketName": "acme-diagnostics"
+        }
+      }
+    },
+    {
+      "event_id": "evt-oc-2",
+      "event_time": "2026-08-14T23:06:00Z",
+      "action": "s3:GetObject",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+      "target_arn": "arn:aws:s3:::acme-diagnostics/error-dumps/2026-08-14.log",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetObject",
+        "requestParameters": {
+          "bucketName": "acme-diagnostics"
+        }
+      }
+    }
+  ],
+  "principals": [
+    {
+      "id": "principal-oncall-secondary",
+      "name": "oncall-secondary",
+      "type": "Principal",
+      "arn": "arn:aws:iam::123456789012:user/oncall-secondary",
+      "is_compromised": false
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-oncalltriagerole",
+      "name": "OnCallTriageRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+      "trust_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": [
+                "arn:aws:iam::123456789012:user/oncall-secondary"
+              ]
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource-diagnostics bucket",
+      "name": "Diagnostics Bucket",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::acme-diagnostics",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    }
+  ],
+  "workloads": [],
+  "workflows": [
+    {
+      "id": "triage-read",
+      "name": "Triage Diagnostic Read",
+      "description": "Reads sanitized diagnostic dumps while a Sev-2 ticket is open.",
+      "principal_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+      "required_action": "s3:GetObject",
+      "target_resource_arn": "arn:aws:s3:::acme-diagnostics",
+      "criticality": "High"
+    }
+  ],
+  "candidate_remediations": [
+    {
+      "id": "fix-broad-01",
+      "title": "Revoke all active sessions on the role",
+      "remediation_type": "revoke_role_sessions",
+      "target_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+      "parameters": {
+        "role_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole"
+      },
+      "description": "Deny every principal access to the role. Stops the attacker, and leaves the on-call rotation unable to triage tickets.",
+      "is_broad": true
+    },
+    {
+      "id": "fix-narrow-01",
+      "title": "Deny diagnostic deletion for the triage role",
+      "remediation_type": "remove_resource_permission",
+      "target_arn": "arn:aws:s3:::acme-diagnostics",
+      "parameters": {
+        "denied_principal_arn": "arn:aws:iam::123456789012:role/OnCallTriageRole",
+        "denied_action": "s3:DeleteObject",
+        "denied_resource_arn": "arn:aws:s3:::acme-diagnostics"
+      },
+      "description": "Reads stay available while destructive deletes are blocked.",
+      "is_broad": false
+    }
+  ],
+  "ground_truth": {
+    "expected_broad_remediation_status": "n/a",
+    "expected_narrow_remediation_status": "n/a"
+  }
+}

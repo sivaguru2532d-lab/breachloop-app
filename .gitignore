@@ -15,6 +15,12 @@ build/
 *.egg-info/
 .vite/
 
+# Next.js / deploy tooling
+.next/
+out/
+.swc/
+.vercel/
+
 # IDE
 .vscode/
 .idea/
@@ -47,5 +53,10 @@ reports/*.json
 
 # Temporary
 .cache/
+*.tsbuildinfo
+next-env.d.ts
 tmp/
 temp/
+
+# esbuild bundle for the render tests (rebuilt by `npm test`)
+.test-build/

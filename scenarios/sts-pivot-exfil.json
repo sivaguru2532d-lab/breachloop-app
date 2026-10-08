@@ -1,0 +1,181 @@
+{
+  "id": "sts-pivot-exfil",
+  "name": "STS Pivot to Customer PII",
+  "description": "A leaked CI token assumes the data pipeline role and exfiltrates the customer PII bucket after hours.",
+  "scenario_type": "attack",
+  "events": [
+    {
+      "event_id": "evt-ci-assume",
+      "event_time": "2026-02-14T03:12:40Z",
+      "action": "sts:AssumeRole",
+      "service": "sts",
+      "actor_arn": "arn:aws:iam::123456789012:user/ci-deploy",
+      "target_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "AssumeRole",
+        "sourceIPAddress": "203.0.113.44",
+        "userIdentity": {
+          "type": "IAMUser",
+          "principalId": "AIDACI01",
+          "arn": "arn:aws:iam::123456789012:user/ci-deploy",
+          "userName": "ci-deploy"
+        }
+      }
+    },
+    {
+      "event_id": "evt-pii-list",
+      "event_time": "2026-02-14T03:13:05Z",
+      "action": "s3:ListBucket",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "target_arn": null,
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "ListBucket",
+        "requestParameters": {
+          "bucketName": "acme-customer-pii"
+        }
+      }
+    },
+    {
+      "event_id": "evt-pii-get",
+      "event_time": "2026-02-14T03:13:31Z",
+      "action": "s3:GetObject",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "target_arn": "arn:aws:s3:::acme-customer-pii",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetObject",
+        "requestParameters": {
+          "bucketName": "acme-customer-pii",
+          "key": "exports/customers.parquet"
+        }
+      }
+    },
+    {
+      "event_id": "evt-pii-get2",
+      "event_time": "2026-02-14T03:14:02Z",
+      "action": "s3:GetObject",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "target_arn": "arn:aws:s3:::acme-customer-pii",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetObject",
+        "requestParameters": {
+          "bucketName": "acme-customer-pii",
+          "key": "exports/contracts.tar"
+        }
+      }
+    }
+  ],
+  "principals": [
+    {
+      "id": "principal-ci-deploy",
+      "name": "ci-deploy",
+      "type": "Principal",
+      "arn": "arn:aws:iam::123456789012:user/ci-deploy",
+      "is_compromised": true
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-datapipelinerole",
+      "name": "DataPipelineRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "trust_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": [
+                "arn:aws:iam::123456789012:user/ci-deploy"
+              ]
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource-customer pii bucket",
+      "name": "Customer PII Bucket",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::acme-customer-pii",
+      "is_sensitive": true,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    },
+    {
+      "id": "resource-etl staging bucket",
+      "name": "ETL Staging Bucket",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::acme-etl-staging",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    }
+  ],
+  "workloads": [
+    {
+      "id": "workload-nightly etl",
+      "name": "Nightly ETL",
+      "type": "Lambda",
+      "arn": "arn:aws:lambda:us-east-1:123456789012:function:nightly-etl",
+      "execution_role_arn": "arn:aws:iam::123456789012:role/DataPipelineRole"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "etl-nightly",
+      "name": "Nightly ETL Load",
+      "description": "Loads transformed events into the analytics staging bucket every night at 02:00 UTC.",
+      "principal_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "required_action": "s3:PutObject",
+      "target_resource_arn": "arn:aws:s3:::acme-etl-staging",
+      "criticality": "High"
+    }
+  ],
+  "candidate_remediations": [
+    {
+      "id": "fix-broad-01",
+      "title": "Revoke all active sessions on the role",
+      "remediation_type": "revoke_role_sessions",
+      "target_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+      "parameters": {
+        "role_arn": "arn:aws:iam::123456789012:role/DataPipelineRole"
+      },
+      "description": "Deny every principal access to the role. Stops the attacker, but also halts the nightly ETL load.",
+      "is_broad": true
+    },
+    {
+      "id": "fix-narrow-01",
+      "title": "Deny object reads on the PII bucket for the pipeline role",
+      "remediation_type": "remove_resource_permission",
+      "target_arn": "arn:aws:s3:::acme-customer-pii",
+      "parameters": {
+        "denied_principal_arn": "arn:aws:iam::123456789012:role/DataPipelineRole",
+        "denied_action": "s3:GetObject",
+        "denied_resource_arn": "arn:aws:s3:::acme-customer-pii"
+      },
+      "description": "Scopes the deny to s3:GetObject on the customer PII bucket so the ETL write path keeps running.",
+      "is_broad": false
+    }
+  ],
+  "ground_truth": {
+    "expected_broad_remediation_status": "rejected",
+    "expected_narrow_remediation_status": "verified",
+    "expected_broad_remediation_broken_workflow": "etl-nightly"
+  }
+}

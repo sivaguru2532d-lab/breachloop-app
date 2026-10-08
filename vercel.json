@@ -1,27 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "services": {
-    "backend": {
-      "root": "backend",
-      "framework": "fastapi"
-    },
-    "frontend": {
-      "root": "frontend",
-      "framework": "vite"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": {
-        "service": "backend"
-      }
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "service": "frontend"
-      }
-    }
-  ]
+  "_comment": "BreachLoop is a single self-contained Next.js app: the UI and every /api/* route are deployed by one Vercel project. The previous file declared a non-existent `services` schema (`backend` FastAPI + `frontend` Vite) and rewrites pointing at it, which Vercel ignored — every /api request fell through to the static frontend and failed. Function limits live in the route segment config (app/api/**/route.ts -> `export const maxDuration`).",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install"
 }
