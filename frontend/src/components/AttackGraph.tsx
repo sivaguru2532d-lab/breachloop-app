@@ -292,7 +292,6 @@ export function AttackGraph({ attackPath, events, scenarioDetail, className = ''
     const observer = new ResizeObserver(() => fitToView());
     if (containerRef.current) observer.observe(containerRef.current);
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes]);
 
   // Settle into a fitted view once the entrance animation completes.
@@ -300,7 +299,6 @@ export function AttackGraph({ attackPath, events, scenarioDetail, className = ''
     if (!isAnimating && animationProgress >= 1) {
       fitToView();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnimating, animationProgress]);
 
   return (
