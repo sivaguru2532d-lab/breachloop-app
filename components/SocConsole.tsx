@@ -211,9 +211,13 @@ export function SocConsole() {
     setSidebarOpen(false);
   }, []);
 
-  const handleRunIncident = useCallback(async () => {
+  const handleRunIncident = useCallback(async (explicitScenarioId?: string) => {
     if (isRunning) return;
-    if (!selectedScenarioId) {
+    // Called three ways: the header button (no args, and as a click handler so
+    // the first argument is a SyntheticEvent), the launch pad's Start, and a
+    // double-click on a specific card. Only a real string may pick the target.
+    const target = typeof explicitScenarioId === 'string' && explicitScenarioId ? explicitScenarioId : selectedScenarioId;
+    if (!target) {
       // The header control stays reachable before the launch pad has a target.
       // Returning silently there reads as a broken button, so say what is
       // missing instead of disabling the whole page's primary action.
@@ -225,10 +229,11 @@ export function SocConsole() {
       });
       return;
     }
+    setSelectedScenarioId(target);
     setIsRunning(true);
     try {
       const result = await api.runIncident({
-        scenario_id: selectedScenarioId,
+        scenario_id: target,
         provider_mode: providerMode,
       });
       setIncidentData(result.data);
@@ -240,7 +245,7 @@ export function SocConsole() {
         pushNotice({
           tone: 'info',
           title: `${result.data.attack_path?.steps?.length ?? 0} attack step(s) reconstructed`,
-          message: `Incident analysis finished for ${selectedScenarioId}.`,
+          message: `Incident analysis finished for ${target}.`,
           autoDismissMs: 6000,
         });
       }
@@ -502,6 +507,7 @@ export function SocConsole() {
               empty={!scenariosFailed && scenarios.length === 0}
               apiBase={describeApiBase()}
               onReload={() => void loadScenarios()}
+              formatTimestamp={formatTimestamp}
             />
           )}
         </main>

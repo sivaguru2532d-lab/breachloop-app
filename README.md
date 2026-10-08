@@ -24,10 +24,11 @@ narrow fix blocks the attacker and preserves the workflow. Every candidate is si
   drawn separately and node highlighting for the entry point and target.
 - **Audit timeline** — CloudTrail events, filterable, attack-path events highlighted, raw evidence inspectable.
 - **Workflow health matrix** — which business-critical workflows survive which fix.
-- **Launch pad** — the console opens on the loaded cloud inventory instead of an empty panel: every pack is a
-  selectable target card (attack simulations and benign baselines grouped separately), and one armed button
-  starts the run. Entrance staggers, the radar sweep and the standby pulse are pure CSS, so
-  `prefers-reduced-motion` flattens them.
+- **Launch pad** — the console opens on the loaded cloud inventory instead of an empty panel. Every pack is a
+  card carrying its real pre-run briefing (services touched, CloudTrail window, identities, sensitive and
+  publicly-exposed resources, workflow criticality) over a live micro-topology map; a spotlight arms a
+  recommended first run; search, scope chips and `↑ ↓ Enter / Esc` cover picking a target by keyboard. Expected
+  remediation verdicts are deliberately **not** shown — the pad previews scope, not the answer key.
 - **12-scenario benchmark** — 7 attack, 5 benign, ground-truth labelled, with a synthetic-scorecard modal.
 - **100% synthetic and offline** — no cloud credentials, no egress at runtime, no provider required.
 
@@ -79,7 +80,7 @@ breachloop-app/
 | Method | Route | Notes |
 | --- | --- | --- |
 | `GET` | `/api/health` | readiness + capability report, including `persistence.writable` and active degradations |
-| `GET` | `/api/scenarios` | 12 summaries, attack/benign grouped |
+| `GET` | `/api/scenarios` | summaries plus a per-pack `briefing` (services, event window, identity and resource counts, a bounded topology glyph) — never `ground_truth` |
 | `GET` | `/api/scenarios/{id}` | the pack itself — events, topology sections, candidates, ground truth |
 | `POST` | `/api/incidents/run` | `{ "scenario_id": "…" }` → `{ run_id, report, scenario_detail }`, report inline (works where disk is read-only) |
 | `GET` | `/api/incidents/{runId}` | stored run |
@@ -134,7 +135,7 @@ that unit tests cannot see:
   unparseable timestamps, missing fields). The attack graph must draw exactly one node per distinct ARN; the
   scorecard must print every degradation note and never leak `NaN`.
 
-Both suites boot real servers, so `npm test` needs a build; `npm run test:e2e` does the build for you, and
+Both suites boot real servers (31 tests today), so `npm test` needs a build; `npm run test:e2e` does the build for you, and
 `npm run verify` is ordered typecheck → build → test so it works on a fresh clone.
 
 There is no headless browser available in this environment (no Playwright binary, and its browser CDN is not

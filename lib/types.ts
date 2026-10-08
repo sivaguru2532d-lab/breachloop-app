@@ -9,6 +9,12 @@
  * `SimulationResult` required UI-only fields the API never sends).
  */
 
+// Imported for the field below *and* re-exported, so components can keep
+// importing every wire type from one module.
+import type { LaunchBriefing } from '@/lib/api/briefing';
+
+export type { LaunchBriefing, LaunchGlyphNode, LaunchNodeKind } from '@/lib/api/briefing';
+
 export type {
   AttackPath,
   AttackPathStep,
@@ -55,7 +61,17 @@ export interface ScenarioSummary {
   event_count: number;
   workflow_count: number;
   candidate_count: number;
+  /**
+   * Pre-run facts derived from the pack, attached by GET /api/scenarios so the
+   * launch pad can describe each environment without fetching 12 detail
+   * documents. Absent on an older API, which is why every consumer treats it
+   * as optional and renders the counts it does have.
+   */
+  briefing?: LaunchBriefing;
 }
+
+/** A scenario as the launch pad sees it. */
+export type LaunchTarget = ScenarioSummary;
 
 /**
  * Full scenario detail. `events` is the verbatim `events` array from the pack,

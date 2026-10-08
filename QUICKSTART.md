@@ -11,9 +11,11 @@ No `.env`, no Python, no second process. If you want the production path: `npm r
 
 ## 2. Click around
 
-1. The console opens on the **launch pad**: every scenario pack in the loaded cloud inventory is a card, split
-   into *Attack simulations* and *Benign baselines*. Pick **Bucket Policy Made Public** — it is the clearest first
-   run — then press **Start attack**. (The sidebar stays available for switching targets later.)
+1. The console opens on the **launch pad**: every pack in the loaded cloud inventory is a card with its real
+   pre-run briefing — services touched, CloudTrail window, identities, sensitive resources — drawn over a live
+   topology map. A **recommended first run** is spotlighted, so `Enter` launches immediately; or search
+   (`secretsmanager`, `kms`, `snapshot`…), filter by scope, and press **Start attack**. `↑`/`↓` walk targets,
+   double-click a card to launch it directly, `/` focuses search, `Esc` clears it.
 2. The **hypothesis bar** states the attacker's entry point, the objective, and a confidence score. Selecting a
    different target in the sidebar returns you to the launch pad with that target already locked.
 3. The **graph** pulses on the compromised principal and the targeted resource; red edges are the attack path,

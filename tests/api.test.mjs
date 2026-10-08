@@ -91,6 +91,59 @@ describe('scenario pack', () => {
     assert.ok(json.principals.some((p) => p.is_compromised), 'expected a compromised principal');
   });
 
+  it('attaches a bounded, pack-derived briefing to every listed scenario', async () => {
+    const { status, text, json } = await get(baseA, '/api/scenarios');
+    assert.equal(status, 200);
+
+    for (const scenario of json.scenarios) {
+      const briefing = scenario.briefing;
+      assert.ok(briefing, `${scenario.scenario_id} must ship a briefing for the launch pad`);
+      assert.ok(Array.isArray(briefing.services) && briefing.services.length > 0, `${scenario.scenario_id}: services`);
+      assert.ok(
+        briefing.services.every((service) => typeof service === 'string' && service !== 'unknown'),
+        `${scenario.scenario_id}: normalizer placeholders must not reach the UI as service names`
+      );
+      assert.ok(briefing.glyph.nodes.length <= 6, `${scenario.scenario_id}: glyph nodes must stay bounded`);
+      assert.ok(briefing.glyph.links.length <= 8, `${scenario.scenario_id}: glyph links must stay bounded`);
+      for (const node of briefing.glyph.nodes) {
+        assert.ok(['principal', 'role', 'workload', 'resource'].includes(node.kind), `${scenario.scenario_id}: node kind`);
+        assert.ok(node.label && node.arn, `${scenario.scenario_id}: glyph nodes carry their identity`);
+      }
+      for (const link of briefing.glyph.links) {
+        assert.ok(
+          Number.isInteger(link.from) && Number.isInteger(link.to) && briefing.glyph.nodes[link.from] && briefing.glyph.nodes[link.to],
+          `${scenario.scenario_id}: glyph links must index real nodes`
+        );
+      }
+      for (const key of ['event_count', 'workflow_count', 'candidate_count']) {
+        assert.equal(typeof scenario[key], 'number', `${scenario.scenario_id}.${key} must be numeric`);
+      }
+      const { first, last, span_minutes } = briefing.window;
+      assert.ok(first && last, `${scenario.scenario_id}: an event window must be reported`);
+      assert.ok(Date.parse(first) <= Date.parse(last), `${scenario.scenario_id}: window must be ordered`);
+      assert.ok(Number.isInteger(span_minutes) && span_minutes >= 0, `${scenario.scenario_id}: span_minutes`);
+    }
+
+    // The pad previews scope, never the verdict — ground truth must not ride
+    // along on the listing, in any form.
+    for (const forbidden of ['ground_truth', 'expected_broad_remediation_status', 'expected_narrow_remediation_status']) {
+      assert.ok(!text.includes(forbidden), `GET /api/scenarios leaked ${forbidden}`);
+    }
+  });
+
+  it('still briefs a pack that had to be coerced, instead of blanking the pad', async () => {
+    // serverB runs against a directory containing a deliberately malformed pack.
+    const { status, json } = await get(baseB, '/api/scenarios');
+    assert.equal(status, 200);
+    assert.ok(json.scenarios.length >= 1, 'the corrupt directory must not empty the listing');
+    for (const scenario of json.scenarios) {
+      const briefing = scenario.briefing;
+      assert.ok(briefing, `${scenario.scenario_id}: a coerced pack still needs a briefing`);
+      assert.ok(briefing.glyph.nodes.length <= 6 && briefing.glyph.links.length <= 8, `${scenario.scenario_id}: bounds`);
+      assert.ok(Number.isFinite(briefing.window.span_minutes), `${scenario.scenario_id}: unparseable timestamps must not yield NaN`);
+    }
+  });
+
   it('answers 404 — not 500 — for an unknown scenario', async () => {
     const { status, json } = await get(baseA, '/api/scenarios/definitely-not-here');
     assert.equal(status, 404);

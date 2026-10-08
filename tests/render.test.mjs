@@ -40,6 +40,7 @@ let base;
 let hostileServer;
 let hostileBase;
 let render;
+let filterLaunchTargets;
 let buildIncidentResponse;
 let truncateArn;
 let formatTimestamp;
@@ -70,6 +71,7 @@ before(async () => {
   buildIncidentResponse = entry.buildIncidentResponse;
   truncateArn = entry.truncateArn;
   formatTimestamp = entry.formatTimestamp;
+  filterLaunchTargets = entry.filterLaunchTargets;
 
   writeBrokenPack();
 
@@ -243,7 +245,7 @@ describe('console renders real payloads', () => {
     }
   });
 
-  it('opens on the launch pad: every cloud target selectable, start gated', async () => {
+  it('opens on the launch pad: every cloud target, its briefing, and one start control', async () => {
     const { json: list } = await get(base, '/api/scenarios');
 
     const idle = render('LaunchPad', {
@@ -252,15 +254,31 @@ describe('console renders real payloads', () => {
       onSelect: noop,
       onStart: noop,
     });
-    // One card per pack, grouped by what they are.
+    // One card per pack, and each card carries real pack-derived briefing data.
     assert.equal((idle.match(/class="launch-card /g) ?? []).length, list.scenarios.length);
     assert.match(idle, /Choose a cloud to attack/);
-    assert.match(idle, /Attack simulations[\s\S]{0,32}<span>7<\/span>/);
-    assert.match(idle, /Benign baselines[\s\S]{0,32}<span>5<\/span>/);
-    // Nothing selected => the start control exists but is armed-off.
-    assert.match(idle, /<button[^>]*class="launch__start"[^>]*disabled=""/);
-    assert.match(idle, /Standby — select a target/);
-    assert.match(idle, /Start attack|Select a target/);
+    assert.match(idle, /Recommended first run/);
+    assert.match(idle, /Bucket Policy Made Public/, 'nothing locked must spotlight a target, not sit empty');
+    // The inventory totals must equal what the API actually reported.
+    const totals = list.scenarios.reduce(
+      (sum, pack) => ({
+        events: sum.events + pack.event_count,
+        workflows: sum.workflows + pack.workflow_count,
+        fixes: sum.fixes + pack.candidate_count,
+      }),
+      { events: 0, workflows: 0, fixes: 0 }
+    );
+    for (const value of Object.values(totals)) {
+      assert.ok(idle.includes(`>${value}<`), `inventory total ${value} missing from the pad`);
+    }
+    // A briefing glyph per card, plus the spotlight map.
+    assert.equal((idle.match(/class="launch-glyph[ "]/g) ?? []).length, list.scenarios.length + 1);
+    // Nothing locked => the big control offers the recommendation, and the
+    // spotlight's own launch button is available.
+    assert.match(idle, /Start on Bucket Policy Made Public/);
+    assert.match(idle, /Filter by service, action, resource/);
+    assert.equal((idle.match(/class="launch__scope"/g) ?? []).length, 3, 'three inactive scope chips');
+    assert.match(idle, /class="launch__scope launch__scope--active"[^>]*aria-pressed="true"/, 'active scope must say so');
 
     const armed = render('LaunchPad', {
       scenarios: list.scenarios,
@@ -271,13 +289,59 @@ describe('console renders real payloads', () => {
     assert.match(armed, /Target locked —/);
     assert.match(armed, /<strong>Compromised Developer Role<\/strong>/);
     assert.match(armed, /Start attack/);
+    assert.match(armed, /Locked target/);
     assert.ok(!/class="launch__start"[^>]*disabled=""/.test(armed), 'start must be enabled once a target is locked');
     assert.match(armed, /launch-card--selected/);
-    assert.match(armed, /aria-pressed="true"/);
-    // Every name from the pack is on screen — nothing hidden behind the sidebar.
     for (const scenario of list.scenarios) {
       assert.ok(armed.includes(scenario.name), `${scenario.scenario_id} missing from the launch pad`);
     }
+  });
+
+  it('briefings describe the pack without leaking the answer key', async () => {
+    const { json: list } = await get(base, '/api/scenarios');
+
+    const html = render('LaunchPad', {
+      scenarios: list.scenarios,
+      selectedScenarioId: null,
+      onSelect: noop,
+      onStart: noop,
+      formatTimestamp,
+    });
+    // The pad must not pre-answer what the twin is about to determine.
+    const rendered = unescapeHtml(html);
+    for (const forbidden of ['ground_truth', 'expected_broad_remediation_status', 'expected_narrow_remediation_status']) {
+      assert.ok(!rendered.includes(forbidden), `launch pad leaked ${forbidden}`);
+    }
+    // No placeholder mush either: every briefing slot resolves to real data.
+    assert.ok(!/NaN|undefined/.test(html), 'briefing printed NaN/undefined');
+    assert.match(html, /launch__fact/, 'the spotlight must show pack facts');
+    // Sensitive-data flags come from the packs, and at least one has them.
+    const sensitive = list.scenarios.filter((pack) => (pack.briefing?.sensitive_resources ?? 0) > 0);
+    assert.ok(sensitive.length > 0, 'expected some pack to expose sensitive resources');
+    assert.match(html, /sensitive/);
+  });
+
+  it('filters and scopes are pure functions over the same data the UI uses', async () => {
+    const { json: list } = await get(base, '/api/scenarios');
+    const all = list.scenarios;
+
+    assert.equal(filterLaunchTargets(all, { query: '', scope: 'all' }).length, all.length);
+    assert.equal(filterLaunchTargets(all, { query: '', scope: 'attack' }).length, 7);
+    assert.equal(filterLaunchTargets(all, { query: '', scope: 'benign' }).length, 5);
+    assert.ok(filterLaunchTargets(all, { query: '', scope: 'sensitive' }).length > 0);
+
+    // Searching by a service named in a briefing finds its packs.
+    const pack = all.find((candidate) => (candidate.briefing?.services ?? []).includes('secretsmanager'));
+    assert.ok(pack, 'expected a pack touching secretsmanager');
+    assert.ok(filterLaunchTargets(all, { query: 'secretsmanager', scope: 'all' }).some((hit) => hit.scenario_id === pack.scenario_id));
+
+    // And a query that matches nothing yields nothing, rather than everything.
+    assert.equal(filterLaunchTargets(all, { query: 'definitely-not-a-service', scope: 'all' }).length, 0);
+    // Hostile inputs must not throw.
+    assert.deepEqual(filterLaunchTargets(null, { query: 'x', scope: 'attack' }), []);
+    assert.equal(filterLaunchTargets(all, { query: '', scope: 'nonsense' }).length, all.length, 'unknown scope must fall through to everything');
+    // A literal asterisk is a character, not a glob: no pack is named "*".
+    assert.equal(filterLaunchTargets(all, { query: '*', scope: 'all' }).length, 0);
   });
 
   it('explains an unreachable pack instead of showing an empty grid', () => {
@@ -309,9 +373,10 @@ describe('console renders real payloads', () => {
   it('keeps launch-pad motion inside the reduced-motion contract', () => {
     const css = fs.readFileSync(path.join(ROOT, 'styles', 'index.css'), 'utf8');
     const reduced = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
-    // Staggered entrance uses animation-delay; the global block only zeroes
-    // duration, so the launch grid must reset its own delays or cards pop in.
-    assert.match(reduced, /\.launch-card[\s\S]{0,120}animation-delay: 0ms/);
+    // Staggered entrances and the dash-flow both use animation-delay; the global
+    // block only zeroes duration, so the pad must zero delays or cards pop in.
+    assert.match(reduced, /animation-delay: 0ms !important/);
+    assert.ok(reduced.includes('.launch-glyph__link'), 'looping edge flow must stop under reduced motion');
     assert.match(css, /@keyframes launch-sweep/);
     const html = render('LaunchPad', {
       scenarios: [{ scenario_id: 'x', name: 'X', description: 'd', scenario_type: 'attack', event_count: 1, workflow_count: 0, candidate_count: 1 }],
@@ -319,7 +384,9 @@ describe('console renders real payloads', () => {
       onSelect: noop,
       onStart: noop,
     });
-    assert.match(html, /animation-delay:55ms|animation-delay:0ms/, 'stagger delay is inline per card');
+    assert.match(html, /animation-delay:0ms/, 'stagger delay is inline per card');
+    // A pack with no briefing must still render, glyph and all.
+    assert.match(html, /launch-glyph__empty|launch-glyph/);
   });
 
   it('renders the console shell on its own (initial cold state)', () => {

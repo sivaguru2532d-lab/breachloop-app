@@ -8,8 +8,9 @@
  */
 
 import { ok, resilient } from '@/lib/api/respond';
+import { scenarioBriefing, type LaunchBriefing } from '@/lib/api/briefing';
 import { buildSyntheticScenario } from '@/lib/engine/scenarioSchema';
-import { listScenarios } from '@/lib/engine/scenarioStore';
+import { allScenarios, listScenarios } from '@/lib/engine/scenarioStore';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,8 +21,17 @@ export async function GET() {
     'GET /api/scenarios',
     () => {
       const { summaries, notes } = listScenarios();
+      // Briefings ride along so the launch pad needs exactly one request. They
+      // are derived, not stored on the pack, and are memoized per parsed pack.
+      const briefings = new Map<string, LaunchBriefing>(
+        allScenarios().map((scenario) => [scenario.id, scenarioBriefing(scenario)])
+      );
+      const scenarios = summaries.map((summary) => ({
+        ...summary,
+        briefing: briefings.get(summary.scenario_id),
+      }));
       return ok({
-        scenarios: summaries,
+        scenarios,
         total: summaries.length,
         synthetic: true,
         ...(notes.length > 0 ? { degradation_notes: notes.slice(0, 8) } : {}),
@@ -39,6 +49,7 @@ export async function GET() {
             event_count: scenario.raw_events.length,
             workflow_count: scenario.workflows.length,
             candidate_count: scenario.candidate_remediations.length,
+            briefing: scenarioBriefing(scenario),
           },
         ],
         total: 1,
