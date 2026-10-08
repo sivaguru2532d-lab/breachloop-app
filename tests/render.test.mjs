@@ -243,6 +243,85 @@ describe('console renders real payloads', () => {
     }
   });
 
+  it('opens on the launch pad: every cloud target selectable, start gated', async () => {
+    const { json: list } = await get(base, '/api/scenarios');
+
+    const idle = render('LaunchPad', {
+      scenarios: list.scenarios,
+      selectedScenarioId: null,
+      onSelect: noop,
+      onStart: noop,
+    });
+    // One card per pack, grouped by what they are.
+    assert.equal((idle.match(/class="launch-card /g) ?? []).length, list.scenarios.length);
+    assert.match(idle, /Choose a cloud to attack/);
+    assert.match(idle, /Attack simulations[\s\S]{0,32}<span>7<\/span>/);
+    assert.match(idle, /Benign baselines[\s\S]{0,32}<span>5<\/span>/);
+    // Nothing selected => the start control exists but is armed-off.
+    assert.match(idle, /<button[^>]*class="launch__start"[^>]*disabled=""/);
+    assert.match(idle, /Standby — select a target/);
+    assert.match(idle, /Start attack|Select a target/);
+
+    const armed = render('LaunchPad', {
+      scenarios: list.scenarios,
+      selectedScenarioId: 'compromised-role',
+      onSelect: noop,
+      onStart: noop,
+    });
+    assert.match(armed, /Target locked —/);
+    assert.match(armed, /<strong>Compromised Developer Role<\/strong>/);
+    assert.match(armed, /Start attack/);
+    assert.ok(!/class="launch__start"[^>]*disabled=""/.test(armed), 'start must be enabled once a target is locked');
+    assert.match(armed, /launch-card--selected/);
+    assert.match(armed, /aria-pressed="true"/);
+    // Every name from the pack is on screen — nothing hidden behind the sidebar.
+    for (const scenario of list.scenarios) {
+      assert.ok(armed.includes(scenario.name), `${scenario.scenario_id} missing from the launch pad`);
+    }
+  });
+
+  it('explains an unreachable pack instead of showing an empty grid', () => {
+    const blocked = render('LaunchPad', {
+      scenarios: [],
+      selectedScenarioId: null,
+      onSelect: noop,
+      onStart: noop,
+      unavailable: true,
+      apiBase: '/api',
+      onReload: noop,
+    });
+    assert.match(blocked, /No targets loaded/);
+    assert.match(blocked, /Reload scenarios/);
+    assert.match(blocked, /role="alert"/, 'a failed pack must be announced, not decorative');
+    assert.ok(!blocked.includes('launch-card'), 'no target cards when there are no targets');
+
+    const emptyPack = render('LaunchPad', {
+      scenarios: [],
+      selectedScenarioId: null,
+      onSelect: noop,
+      onStart: noop,
+      empty: true,
+      onReload: noop,
+    });
+    assert.match(emptyPack, /BREACHLOOP_SCENARIOS_DIR|pack is empty/);
+  });
+
+  it('keeps launch-pad motion inside the reduced-motion contract', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'styles', 'index.css'), 'utf8');
+    const reduced = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    // Staggered entrance uses animation-delay; the global block only zeroes
+    // duration, so the launch grid must reset its own delays or cards pop in.
+    assert.match(reduced, /\.launch-card[\s\S]{0,120}animation-delay: 0ms/);
+    assert.match(css, /@keyframes launch-sweep/);
+    const html = render('LaunchPad', {
+      scenarios: [{ scenario_id: 'x', name: 'X', description: 'd', scenario_type: 'attack', event_count: 1, workflow_count: 0, candidate_count: 1 }],
+      selectedScenarioId: null,
+      onSelect: noop,
+      onStart: noop,
+    });
+    assert.match(html, /animation-delay:55ms|animation-delay:0ms/, 'stagger delay is inline per card');
+  });
+
   it('renders the console shell on its own (initial cold state)', () => {
     const html = render('SocConsole', {});
     assert.match(html, /BreachLoop/);

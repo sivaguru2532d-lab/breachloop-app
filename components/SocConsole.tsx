@@ -13,14 +13,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  Loader2,
-  RotateCw,
-  X,
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RotateCw, X } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Sidebar } from '@/components/Sidebar';
 import { HypothesisBar } from '@/components/HypothesisBar';
@@ -33,6 +26,7 @@ import { EvidenceReportView } from '@/components/EvidenceReportView';
 import { DynamicBackground } from '@/components/DynamicBackground';
 import { MagneticCursor } from '@/components/MagneticCursor';
 import { ScrollReveal } from '@/components/ScrollReveal';
+import { LaunchPad } from '@/components/LaunchPad';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { api, describeApiBase, formatTimestamp, truncateArn } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/fetch';
@@ -218,7 +212,19 @@ export function SocConsole() {
   }, []);
 
   const handleRunIncident = useCallback(async () => {
-    if (!selectedScenarioId || isRunning) return;
+    if (isRunning) return;
+    if (!selectedScenarioId) {
+      // The header control stays reachable before the launch pad has a target.
+      // Returning silently there reads as a broken button, so say what is
+      // missing instead of disabling the whole page's primary action.
+      pushNotice({
+        tone: 'info',
+        title: 'No target selected',
+        message: 'Pick a cloud environment on the launch pad, then start the attack.',
+        autoDismissMs: 6000,
+      });
+      return;
+    }
     setIsRunning(true);
     try {
       const result = await api.runIncident({
@@ -415,23 +421,6 @@ export function SocConsole() {
               <h2 className="empty-state__title">Connecting to BreachLoop</h2>
               <p className="empty-state__description">Loading the scenario pack from {describeApiBase()}</p>
             </div>
-          ) : !selectedScenarioId ? (
-            <div className="empty-state animate-fade-in-up">
-              {scenariosFailed ? (
-                <Info className="empty-state__icon" size={48} />
-              ) : (
-                <AlertTriangle className="empty-state__icon" size={48} />
-              )}
-              <h2 className="empty-state__title">No scenario selected</h2>
-              <p className="empty-state__description">
-                {scenariosFailed
-                  ? 'The API is unreachable, so the scenario pack is empty. The console stays interactive — retry when ready.'
-                  : 'The pack loaded, but it contains no scenarios. Add JSON files to scenarios/ or set BREACHLOOP_SCENARIOS_DIR.'}
-              </p>
-              <button type="button" className="btn btn--secondary" onClick={() => void loadScenarios()}>
-                <RotateCw size={14} /> Reload scenarios
-              </button>
-            </div>
           ) : isRunning ? (
             <div className="empty-state animate-fade-in-up" role="status">
               <Loader2 className="empty-state__icon animate-spin" size={48} />
@@ -503,14 +492,17 @@ export function SocConsole() {
               </ScrollReveal>
             </div>
           ) : (
-            <div className="empty-state animate-fade-in-up">
-              <AlertTriangle className="empty-state__icon" size={48} />
-              <h2 className="empty-state__title">Ready to Analyze</h2>
-              <p className="empty-state__description">
-                Click “Run Incident” to reconstruct the attack path from CloudTrail events and prove each remediation
-                in the digital twin
-              </p>
-            </div>
+            <LaunchPad
+              scenarios={scenarios}
+              selectedScenarioId={selectedScenarioId}
+              onSelect={handleScenarioSelect}
+              onStart={handleRunIncident}
+              isRunning={isRunning}
+              unavailable={scenariosFailed && scenarios.length === 0}
+              empty={!scenariosFailed && scenarios.length === 0}
+              apiBase={describeApiBase()}
+              onReload={() => void loadScenarios()}
+            />
           )}
         </main>
       </div>

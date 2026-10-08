@@ -16,6 +16,7 @@ import { EventTimeline } from '@/components/EventTimeline';
 import { RemediationLab } from '@/components/RemediationLab';
 import { TwinStateInspector } from '@/components/TwinStateInspector';
 import { BenchmarkModal } from '@/components/BenchmarkModal';
+import { LaunchPad } from '@/components/LaunchPad';
 import { EvidenceReportView } from '@/components/EvidenceReportView';
 import { buildIncidentResponse } from '@/lib/api/client';
 import { formatTimestamp, truncateArn } from '@/lib/api/client';
@@ -31,6 +32,7 @@ const components: Record<string, React.ComponentType<any>> = {
   TwinStateInspector,
   BenchmarkModal,
   EvidenceReportView,
+  LaunchPad,
 };
 
 export function render(name: string, props: Record<string, unknown>): string {

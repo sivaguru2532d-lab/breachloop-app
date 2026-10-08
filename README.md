@@ -24,6 +24,10 @@ narrow fix blocks the attacker and preserves the workflow. Every candidate is si
   drawn separately and node highlighting for the entry point and target.
 - **Audit timeline** — CloudTrail events, filterable, attack-path events highlighted, raw evidence inspectable.
 - **Workflow health matrix** — which business-critical workflows survive which fix.
+- **Launch pad** — the console opens on the loaded cloud inventory instead of an empty panel: every pack is a
+  selectable target card (attack simulations and benign baselines grouped separately), and one armed button
+  starts the run. Entrance staggers, the radar sweep and the standby pulse are pure CSS, so
+  `prefers-reduced-motion` flattens them.
 - **12-scenario benchmark** — 7 attack, 5 benign, ground-truth labelled, with a synthetic-scorecard modal.
 - **100% synthetic and offline** — no cloud credentials, no egress at runtime, no provider required.
 

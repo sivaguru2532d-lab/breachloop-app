@@ -11,8 +11,11 @@ No `.env`, no Python, no second process. If you want the production path: `npm r
 
 ## 2. Click around
 
-1. Pick a scenario in the left sidebar — **Bucket Policy Made Public** is the clearest first run.
-2. The **hypothesis bar** states the attacker's entry point, the objective, and a confidence score.
+1. The console opens on the **launch pad**: every scenario pack in the loaded cloud inventory is a card, split
+   into *Attack simulations* and *Benign baselines*. Pick **Bucket Policy Made Public** — it is the clearest first
+   run — then press **Start attack**. (The sidebar stays available for switching targets later.)
+2. The **hypothesis bar** states the attacker's entry point, the objective, and a confidence score. Selecting a
+   different target in the sidebar returns you to the launch pad with that target already locked.
 3. The **graph** pulses on the compromised principal and the targeted resource; red edges are the attack path,
    blue edges are benign business workflows.
 4. The **timeline** holds the CloudTrail events behind that path — toggle "attack path only" and expand an event
