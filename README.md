@@ -1,162 +1,179 @@
-# BreachLoop - AI-Assisted Cloud Incident-Response Simulator
+# BreachLoop — AI-Assisted Cloud Incident-Response Simulator
 
-A polished, cinematic incident-response console that demonstrates AI-assisted cloud security analysis with a digital twin validation system.
+A cinematic SOC console that ingests synthetic CloudTrail events, reconstructs the attack path, proposes
+remediations, and tests every fix against an in-process digital twin before anything is called *verified*.
 
-## 🎯 Overview
+One deployable unit. Next.js 15 App Router serves both the UI and the API, and the engine that used to live in
+a separate FastAPI process is now TypeScript in `lib/engine/`. `npm install && npm run dev` is the entire setup —
+no `.env`, no Python, no companion process, no CORS hop.
 
-BreachLoop ingests synthetic CloudTrail audit events, reconstructs attack paths, proposes remediation actions, and tests each fix in an in-process digital twin before marking it verified. The system proves that broad fixes (like revoking all role sessions) can break critical business workflows, while narrow fixes (like scoped resource permissions) stop attackers without disruption.
+## The claim it earns
 
-## ✨ Key Features
+Broad fixes (revoke all role sessions) and narrow fixes (scoped deny) both look like wins on a reachability
+dashboard. BreachLoop shows the difference: the broad fix blocks the attacker **and** breaks payroll, while the
+narrow fix blocks the attacker and preserves the workflow. Every candidate is simulated against cloned state, so
+`verified` means "verified against the twin" — never "verified against AWS".
 
-- **100% Synthetic & Offline**: Zero cloud credentials required, zero external API calls
-- **Digital Twin Validation**: Remediation candidates tested against cloned state before deployment
-- **Cinematic SOC Console**: Dark theme with glassmorphism, semantic color coding, purposeful motion
-- **Attack Path Visualization**: Interactive SVG graph showing compromise → escalation → exfiltration
-- **Audit Timeline**: Expandable CloudTrail event inspector with attack/benign categorization
-- **Remediation Laboratory**: Side-by-side comparison of broad vs narrow fixes with verification status
-- **Workflow Health Matrix**: Business-critical workflow preservation validation
-- **12-Scenario Benchmark**: Attack scenarios + benign workflows with ground-truth labels
+## Key features
 
-## 🏗️ Architecture
+- **Digital-twin validation** — each remediation is applied to a cloned graph and re-analysed; status is
+  `verified` / `rejected` / `unverified` with the reason it earned.
+- **Attack-path reconstruction** — BFS over trust + permission edges, with per-step evidence pointing back at a
+  real event id.
+- **Interactive SVG graph** — compromise → escalation → exfiltration, with attack edges and benign workflow edges
+  drawn separately and node highlighting for the entry point and target.
+- **Audit timeline** — CloudTrail events, filterable, attack-path events highlighted, raw evidence inspectable.
+- **Workflow health matrix** — which business-critical workflows survive which fix.
+- **12-scenario benchmark** — 7 attack, 5 benign, ground-truth labelled, with a synthetic-scorecard modal.
+- **100% synthetic and offline** — no cloud credentials, no egress at runtime, no provider required.
+
+## Quick start
+
+```bash
+npm install
+npm run dev            # http://localhost:3000
+```
+
+Production:
+
+```bash
+npm run build
+npm run start          # http://localhost:3000
+```
+
+Verify everything (typecheck → tests → build):
+
+```bash
+npm run verify
+```
+
+Nothing needs configuring. If `ANTHROPIC_API_KEY` is absent the analyst stays deterministic and says so in the
+payload (`provider_mode: "deterministic"`) instead of failing.
+
+## Layout
 
 ```
 breachloop-app/
-├── frontend/          # React + TypeScript + Vite
-│   ├── src/
-│   │   ├── components/   # SOC console UI components
-│   │   ├── types/        # TypeScript type definitions
-│   │   ├── api/          # API client
-│   │   └── styles/       # Dark SOC theme CSS
-│   └── dist/          # Production build
-├── backend/           # FastAPI + Python (to be implemented)
-│   ├── breachloop/
-│   │   ├── api/       # REST endpoints
-│   │   ├── models/    # Pydantic schemas
-│   │   ├── engine/    # Graph analysis & digital twin
-│   │   └── ingestion/ # CloudTrail normalization
-│   └── tests/
-├── scenarios/         # Synthetic CloudTrail scenarios
-├── reports/           # Generated evidence reports
-└── docs/             # Architecture & evaluation docs
+├── app/
+│   ├── layout.tsx, page.tsx        # console shell
+│   └── api/                        # route handlers = the whole "backend"
+├── components/                     # 14 presentational components (SocConsole is the root)
+├── lib/
+│   ├── api/                        # client, base-URL resolver, retrying fetch, serializers, respond helpers
+│   ├── engine/                     # ported engine: normalizer, graph, analyst, twin, simulation, runStore,
+│   │                               #   scenarioStore + schema, provider, fallback
+│   └── types.ts                    # single public type surface for the UI
+├── scenarios/                      # 12 synthetic scenario packs (the "dataset")
+├── styles/index.css                # ember/Glass SOC theme
+├── tests/                          # node:test end-to-end suites (real `next start`)
+├── backend/                        # Python reference implementation + pytest — optional parity oracle
+└── vercel.json                     # zero-config deploy
 ```
 
-## 🚀 Quick Start
+## HTTP API
 
-### Prerequisites
-- Node.js 18+ and npm
-- Python 3.11+
+| Method | Route | Notes |
+| --- | --- | --- |
+| `GET` | `/api/health` | readiness + capability report, including `persistence.writable` and active degradations |
+| `GET` | `/api/scenarios` | 12 summaries, attack/benign grouped |
+| `GET` | `/api/scenarios/{id}` | the pack itself — events, topology sections, candidates, ground truth |
+| `POST` | `/api/incidents/run` | `{ "scenario_id": "…" }` → `{ run_id, report, scenario_detail }`, report inline (works where disk is read-only) |
+| `GET` | `/api/incidents/{runId}` | stored run |
+| `GET` | `/api/incidents/{runId}/report` | stored report, recomputed from the pack if the run only survives in memory |
+| `POST` | `/api/incidents/{runId}/simulate` | `{ "remediation_id": "…", "scope": "broad"\|"narrow" }` |
+| `POST` \| `GET` | `/api/benchmark/run` | synthetic scorecard + disclaimer |
+| `GET` | `/api/reports`, `/api/reports/{runId}` | evidence reports, `?format=jsonl\|csv` and `?download=1` |
 
-### Frontend Development
+Requests never fail with a bare 500: a missing pack, a corrupt file or an unwritable disk downgrades the response
+(`degraded: true` + `degradation_notes`) while still returning a usable report. Contract errors are still contract
+errors — `400` for a missing `scenario_id`, `404` for an unknown scenario.
+
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `npm run dev` / `start` | `next dev` / `next start`, bound to `0.0.0.0:${PORT:-3000}` |
+| `npm run build` | production build; scenario packs are traced into every API bundle |
+| `npm run typecheck` | `tsc --noEmit` (strict) |
+| `npm test` | end-to-end suites against two live `next start` servers — needs `.next/`, so build first |
+| `npm run test:e2e` | `next build` followed by `npm test`, i.e. the suites with their prerequisite |
+| `npm run verify` | typecheck → build → test (the whole gate, from a clean checkout) |
+| `npm run reference:install\|serve\|test` | the optional Python reference implementation |
+| `npm run dev:with-reference` | Next dev server + uvicorn side by side (parity debugging) |
+
+## Configuration (all optional)
+
+| Variable | Default | Why you'd set it |
+| --- | --- | --- |
+| `PORT` | `3000` | dev/start port |
+| `NEXT_PUBLIC_API_BASE_URL` | *unset → relative `/api`* | only if you host the API elsewhere |
+| `BREACHLOOP_SCENARIOS_DIR` | `./scenarios` | external pack directory; the bundled pack always backstops it |
+| `BREACHLOOP_DB_PATH` | `os.tmpdir()/breachloop-runs.json` | run-store file; best-effort only |
+| `BREACHLOOP_DISABLE_PERSISTENCE` | `0` | `1` = pure in-memory (serverless-friendly) |
+| `BREACHLOOP_PROVIDER` | `deterministic` | `anthropic` is opt-in and needs a key |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | — | live analyst, never required |
+| `BREACHLOOP_API_CORS_ORIGIN` | — | extra origin for a separately hosted frontend |
+| `NEXT_OUTPUT` | — | `standalone` for container images (off by default) |
+
+`.env.example` documents the same set. Copying it is optional; a zero-config boot is the contract.
+
+## Tests
+
+`npm test` boots two real production servers, because every defect this project has hit was an integration defect
+that unit tests cannot see:
+
+- **`tests/api.test.mjs`** — healthy instance: health, static shell, all 12 scenarios, run/report/simulate, export
+  formats, benchmark, error contracts. Hostile instance (`BREACHLOOP_SCENARIOS_DIR` pointing at a corrupt pack,
+  `BREACHLOOP_DB_PATH=/proc/nope/…`): degradation flags, notes, and the event loop staying responsive under load.
+- **`tests/render.test.mjs`** — bundles the real components with esbuild and `renderToString`s them against live
+  API payloads for all 12 scenarios, then against hand-built hostile payloads (null arrays, `NaN` coordinates,
+  unparseable timestamps, missing fields). The attack graph must draw exactly one node per distinct ARN; the
+  scorecard must print every degradation note and never leak `NaN`.
+
+Both suites boot real servers, so `npm test` needs a build; `npm run test:e2e` does the build for you, and
+`npm run verify` is ordered typecheck → build → test so it works on a fresh clone.
+
+There is no headless browser available in this environment (no Playwright binary, and its browser CDN is not
+reachable), so "UI verification" here means server-rendered markup of the actual components — not a screenshot.
+
+## Parity with the Python reference
+
+`backend/` still holds the original FastAPI implementation, kept as the engine's behavioural oracle:
 
 ```bash
-# Navigate to frontend
-cd breachloop-app/frontend
-
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
-
-# Build for production
-npm run build
+npm run reference:install && npm run reference:test
 ```
 
-The frontend will be available at `http://127.0.0.1:5173`
+Field-by-field comparison of `attack_path`, `hypothesis`, `simulations[]` and workflow state across all 12
+scenarios: **0 mismatches**, benchmark `12/12`, accuracy `100.0%`. Deliberately preserved quirks (they are the
+specification, not bugs): a globally shared BFS `visited` set marked at enqueue so the first hit wins; confidence
+`0.7 + min(0.2, observed_steps × 0.05) + 0.1` for an `AssumeRole` in the path `− 0.15` when an evidenced event is
+unsupported, clamped to `[0,1]`; `observed_steps` counting every step except `evidence_event_id == "topology"`.
 
-### Backend Development
+## Look and feel
 
-```bash
-# Navigate to backend
-cd breachloop-app/backend
+Graphite canvas (`#0b0d12`) with warm frosted-glass panels and an ember accent set carrying the status semantics:
+primary `#ff8a3d`, critical `#f05252`, warning `#eab65d`, verified `#43c6a0`, info `#92a8c7`. Motion is
+deliberate — animated attack-path flow, pulse rings on compromised and target nodes, staged panel entrances.
+`prefers-reduced-motion: reduce` is honored in both places it could leak: the CSS token scale drops to `0ms` and
+flattens keyframes, and each of the three JS-driven loops (`AttackGraph` reveal, `DynamicBackground`,
+`MagneticCursor`) checks the media query and renders the final state instead.
 
-# Install dependencies
-pip install -r requirements.txt
+## Known limits (stated plainly)
 
-# Start API server
-python -m breachloop serve
-
-# Run single incident demo
-python -m breachloop demo --scenario compromised-role
-
-# Run full benchmark suite
-python -m breachloop benchmark
-```
-
-The backend API will be available at `http://127.0.0.1:8000`
-
-### Full Stack (Recommended)
-
-From the repo root:
-```bash
-# Install all dependencies
-cd breachloop-app/frontend && npm install
-cd ../backend && pip install -r requirements.txt
-
-# Start both servers (in separate terminals)
-# Terminal 1 - Backend
-cd breachloop-app/backend && python -m breachloop serve
-
-# Terminal 2 - Frontend
-cd breachloop-app/frontend && npm run dev
-```
-
-### Root-level npm scripts (for convenience)
-
-From `breachloop-app/`:
-```bash
-# Start backend
-npm run backend:serve
-
-# Build frontend
-npm run frontend:build
-
-# Start frontend dev
-npm run frontend:dev
-```
-
-## 🎨 Design Principles
-
-### Dark SOC Console Aesthetic
-- **Base**: `#0B0F17` (deep space navy)
-- **Panels**: Frosted glass with subtle backdrop blur
-- **Accents**:
-  - 🔴 Critical/Attack: `#EF4444` (crimson)
-  - 🟢 Verified/Safe: `#10B981` (emerald)
-  - 🟡 Rejected/Warning: `#F59E0B` (amber)
-  - 🔵 Benign/Info: `#06B6D4` (cyan)
-
-## 📊 Frontend Components
-
-1. **Header** - Navigation with scenario badge, provider toggle, action buttons
-2. **Sidebar** - Scenario selector with attack/benign categorization
-3. **HypothesisBar** - Incident summary with confidence scoring
-4. **AttackGraph** - Interactive SVG visualization of attack path
-5. **EventTimeline** - CloudTrail audit log with expandable event details
-6. **RemediationLab** - Side-by-side comparison of broad vs narrow fixes
-7. **TwinStateInspector** - Business workflow health matrix
-8. **BenchmarkModal** - 12-scenario benchmark scorecard
-9. **EvidenceReportView** - JSON report viewer with download
-
-## 📦 Tech Stack
-
-### Frontend
-- React 18, TypeScript, Vite
-- Lucide React icons
-- CSS Variables theming
-
-### Backend (Planned)
-- FastAPI, Pydantic v2, SQLite
-- Python 3.11+
-
-## 📝 Development Status
-
-- ✅ Frontend UI (100% complete)
-- ✅ Production build ready
-- ⏳ Backend API
-- ⏳ Digital twin engine
-- ⏳ Scenario data
+- **Synthetic only.** Reports carry `synthetic: true` and warnings; the benchmark prints
+  `SYNTHETIC BENCHMARK RESULTS ONLY`. This is a twin, not an authorization oracle.
+- **No strict CSP.** Components use inline styles and `AttackGraph` injects a `<style>` block for its keyframes, so
+  a nonce-based CSP would need those extracted first. Security headers that are set: `X-Frame-Options`,
+  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`.
+- **Fonts load from a `<link>`, not `next/font`.** `next/font` wants the network at build time; builds must be
+  hermetic and offline, so the stack degrades to system fonts.
+- **Run persistence is best-effort.** On a read-only filesystem the store stays in memory and `/api/health` reports
+  `persistence.writable: false`. `full_report` is not written to disk, so disk-hydrated runs recompute.
+- **Linting is opt-in.** `next build` sets `eslint.ignoreDuringBuilds`, so run
+  `npm run lint` explicitly (it is clean today: no warnings, no errors).
 
 ---
 
-**Built for security engineering education and portfolio demonstration**
+Built for security-engineering education and portfolio demonstration. See `SECURITY.md` for the disclosure policy
+and `QUICKSTART.md` for the five-minute tour.

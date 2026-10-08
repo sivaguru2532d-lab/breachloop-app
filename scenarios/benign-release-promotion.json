@@ -1,0 +1,144 @@
+{
+  "id": "benign-release-promotion",
+  "name": "Release Promotion to Production",
+  "description": "The release manager promotes a signed artifact and reads the deploy secret exactly as the change advisory board approved.",
+  "scenario_type": "benign",
+  "events": [
+    {
+      "event_id": "evt-rel-1",
+      "event_time": "2026-08-22T18:00:00Z",
+      "action": "s3:GetObject",
+      "service": "s3",
+      "actor_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+      "target_arn": "arn:aws:s3:::acme-release-artifacts/v42/app.tgz",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetObject",
+        "requestParameters": {
+          "bucketName": "acme-release-artifacts"
+        }
+      }
+    },
+    {
+      "event_id": "evt-rel-2",
+      "event_time": "2026-08-22T18:01:40Z",
+      "action": "secretsmanager:GetSecretValue",
+      "service": "secretsmanager",
+      "actor_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+      "target_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/deploy",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "GetSecretValue",
+        "requestParameters": {
+          "SecretId": "prod/deploy"
+        }
+      }
+    }
+  ],
+  "principals": [
+    {
+      "id": "principal-release-manager",
+      "name": "release-manager",
+      "type": "Principal",
+      "arn": "arn:aws:iam::123456789012:user/release-manager",
+      "is_compromised": false
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-releasemanagerrole",
+      "name": "ReleaseManagerRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+      "trust_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": [
+                "arn:aws:iam::123456789012:user/release-manager"
+              ]
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource-prod deploy secret",
+      "name": "Prod Deploy Secret",
+      "type": "SecretsManager",
+      "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/deploy",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    },
+    {
+      "id": "resource-release artifacts bucket",
+      "name": "Release Artifacts Bucket",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::acme-release-artifacts",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    }
+  ],
+  "workloads": [
+    {
+      "id": "workload-promoter",
+      "name": "Promoter",
+      "type": "Lambda",
+      "arn": "arn:aws:lambda:us-east-1:123456789012:function:promoter",
+      "execution_role_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "promote-artifact",
+      "name": "Release Artifact Fetch",
+      "description": "Fetches the signed artifact for promotion.",
+      "principal_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+      "required_action": "s3:GetObject",
+      "target_resource_arn": "arn:aws:s3:::acme-release-artifacts",
+      "criticality": "High"
+    }
+  ],
+  "candidate_remediations": [
+    {
+      "id": "fix-broad-01",
+      "title": "Revoke all active sessions on the role",
+      "remediation_type": "revoke_role_sessions",
+      "target_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+      "parameters": {
+        "role_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole"
+      },
+      "description": "Deny every principal access to the role. Stops the attacker, and stalls the approved release window.",
+      "is_broad": true
+    },
+    {
+      "id": "fix-narrow-01",
+      "title": "Deny secret deletion for the release role",
+      "remediation_type": "remove_resource_permission",
+      "target_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/deploy",
+      "parameters": {
+        "denied_principal_arn": "arn:aws:iam::123456789012:role/ReleaseManagerRole",
+        "denied_action": "secretsmanager:DeleteSecret",
+        "denied_resource_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/deploy"
+      },
+      "description": "Guards against destructive deletion while the deploy read succeeds.",
+      "is_broad": false
+    }
+  ],
+  "ground_truth": {
+    "expected_broad_remediation_status": "n/a",
+    "expected_narrow_remediation_status": "n/a"
+  }
+}

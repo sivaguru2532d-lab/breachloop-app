@@ -1,0 +1,159 @@
+{
+  "id": "snapshot-share",
+  "name": "Public RDS Snapshot Share",
+  "description": "An attacker with the analytics role shares a production database snapshot publicly, laundering customer records out of the account.",
+  "scenario_type": "attack",
+  "events": [
+    {
+      "event_id": "evt-adb-assume",
+      "event_time": "2026-03-02T22:41:10Z",
+      "action": "sts:AssumeRole",
+      "service": "sts",
+      "actor_arn": "arn:aws:iam::123456789012:user/ana.torres",
+      "target_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "AssumeRole",
+        "sourceIPAddress": "198.51.100.7",
+        "userIdentity": {
+          "type": "IAMUser",
+          "principalId": "AIDAAN01",
+          "arn": "arn:aws:iam::123456789012:user/ana.torres",
+          "userName": "ana.torres"
+        }
+      }
+    },
+    {
+      "event_id": "evt-desc-snap",
+      "event_time": "2026-03-02T22:42:00Z",
+      "action": "rds:DescribeDBSnapshots",
+      "service": "rds",
+      "actor_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "target_arn": null,
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "DescribeDBSnapshots"
+      }
+    },
+    {
+      "event_id": "evt-share-snap",
+      "event_time": "2026-03-02T22:43:18Z",
+      "action": "rds:ModifyDBSnapshotAttribute",
+      "service": "rds",
+      "actor_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "target_arn": "arn:aws:rds:us-east-1:123456789012:snapshot:prod-traffic-2026-03-02",
+      "is_supported": true,
+      "raw_evidence": {
+        "eventName": "ModifyDBSnapshotAttribute",
+        "requestParameters": {
+          "DBSnapshotIdentifier": "prod-traffic-2026-03-02",
+          "AttributeNames": [
+            "restore"
+          ],
+          "ValuesToAdd": [
+            "all"
+          ]
+        }
+      }
+    }
+  ],
+  "principals": [
+    {
+      "id": "principal-ana.torres",
+      "name": "ana.torres",
+      "type": "Principal",
+      "arn": "arn:aws:iam::123456789012:user/ana.torres",
+      "is_compromised": true
+    }
+  ],
+  "roles": [
+    {
+      "id": "role-analyticsrole",
+      "name": "AnalyticsRole",
+      "type": "Role",
+      "arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "trust_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": [
+                "arn:aws:iam::123456789012:user/ana.torres"
+              ]
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource-prod traffic snapshot",
+      "name": "Prod Traffic Snapshot",
+      "type": "DBSnapshot",
+      "arn": "arn:aws:rds:us-east-1:123456789012:snapshot:prod-traffic-2026-03-02",
+      "is_sensitive": true,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    },
+    {
+      "id": "resource-reporting bucket",
+      "name": "Reporting Bucket",
+      "type": "S3Bucket",
+      "arn": "arn:aws:s3:::acme-reporting",
+      "is_sensitive": false,
+      "resource_policy": {
+        "Version": "2012-10-17",
+        "Statement": []
+      }
+    }
+  ],
+  "workloads": [],
+  "workflows": [
+    {
+      "id": "reporting-refresh",
+      "name": "Executive Reporting Refresh",
+      "description": "Rebuilds the executive dashboards into the reporting bucket each evening.",
+      "principal_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "required_action": "s3:PutObject",
+      "target_resource_arn": "arn:aws:s3:::acme-reporting",
+      "criticality": "High"
+    }
+  ],
+  "candidate_remediations": [
+    {
+      "id": "fix-broad-01",
+      "title": "Revoke all active sessions on the role",
+      "remediation_type": "revoke_role_sessions",
+      "target_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+      "parameters": {
+        "role_arn": "arn:aws:iam::123456789012:role/AnalyticsRole"
+      },
+      "description": "Deny every principal access to the role. Stops the attacker, and freezes the executive reporting refresh.",
+      "is_broad": true
+    },
+    {
+      "id": "fix-narrow-01",
+      "title": "Revoke snapshot sharing for the analytics role",
+      "remediation_type": "attach_inline_deny",
+      "target_arn": "arn:aws:rds:us-east-1:123456789012:snapshot:prod-traffic-2026-03-02",
+      "parameters": {
+        "denied_principal_arn": "arn:aws:iam::123456789012:role/AnalyticsRole",
+        "denied_action": "rds:ModifyDBSnapshotAttribute",
+        "denied_resource_arn": "arn:aws:rds:us-east-1:123456789012:snapshot:prod-traffic-2026-03-02"
+      },
+      "description": "Attaches an inline deny for rds:ModifyDBSnapshotAttribute on the single snapshot, leaving reporting writes untouched.",
+      "is_broad": false
+    }
+  ],
+  "ground_truth": {
+    "expected_broad_remediation_status": "rejected",
+    "expected_narrow_remediation_status": "verified",
+    "expected_broad_remediation_broken_workflow": "reporting-refresh"
+  }
+}
