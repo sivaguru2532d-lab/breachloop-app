@@ -2,7 +2,7 @@
   "name": "breachloop",
   "version": "2.0.0",
   "private": true,
-  "description": "AI-Assisted Cloud Incident-Response Simulator \u2014 unified Next.js app (UI + API, no external backend)",
+  "description": "AI-Assisted Cloud Incident-Response Simulator — unified Next.js app (UI + API, no external backend)",
   "license": "MIT",
   "engines": {
     "node": ">=18.17.0"
@@ -22,6 +22,7 @@
     "test:e2e": "npm run build && node --test --test-timeout=90000 tests/*.test.mjs"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",
     "next": "15.5.27",
