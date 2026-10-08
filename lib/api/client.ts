@@ -20,6 +20,8 @@ import type {
   ScenarioDetail,
   ScenarioSummary,
   SimulateResponse,
+  QuizGrade,
+  QuizPreview,
 } from '@/lib/types';
 
 export { ApiError };
@@ -97,6 +99,31 @@ export const api = {
     ]);
 
     return { data: buildIncidentResponse(report, scenario), degradation: readDegradation(run) };
+  },
+
+  /**
+   * Trainer mode. Two calls, both stateless on the server: the pre-commit question
+   * (`preview`) carries no verdict at all, and `grade` recomputes the run to answer.
+   * That split is what makes "look it up after you commit" more than a CSS trick.
+   */
+  quizPreview(scenarioId: string, signal?: AbortSignal): Promise<QuizPreview> {
+    return request<QuizPreview>(`/quiz/preview?scenario_id=${encodeURIComponent(scenarioId)}`, {
+      signal,
+      retries: 3,
+    });
+  },
+
+  quizGrade(
+    input: { scenario_id: string; option_id: string },
+    signal?: AbortSignal
+  ): Promise<QuizGrade> {
+    return request<QuizGrade>('/quiz/grade', {
+      method: 'POST',
+      body: input,
+      signal,
+      // Grading is idempotent but cheap; one retry is plenty.
+      retries: 1,
+    });
   },
 
   getReport(runId: string, signal?: AbortSignal): Promise<EvidenceReport> {

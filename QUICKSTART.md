@@ -18,7 +18,12 @@ No `.env`, no Python, no second process. If you want the production path: `npm r
    double-click a card to launch it directly, `/` focuses search, `Esc` clears it. The **Home** button in the
    header returns to this screen from an analysis (it clears the current incident view; nothing is deleted —
    the twin re-runs deterministically).
-4. In an analysis, click any ARN, the account ID in the header, or a remediation parameter to open the AWS
+4. Switch **Trainer** (top bar, next to the provider indicator) to turn any pack into a question: you get the
+   evidence and the candidate responses, choose one, and press **Lock in answer**. Only then does the twin show
+   its verdict, which workflows each fix breaks, and the pack's answer key. Your score stays in this browser.
+   Grading is per question type: on an attack pack the right answer is the fix that verifies in the twin, on a
+   benign pack it is *no change at all*.
+5. In an analysis, click any ARN, the account ID in the header, or a remediation parameter to open the AWS
    documentation for that service. Links go to docs and never to the AWS console — the resources they name are
    synthetic, so a console link would be both broken and misleading.
 2. The **hypothesis bar** states the attacker's entry point, the objective, and a confidence score. Selecting a

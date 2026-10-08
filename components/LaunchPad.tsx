@@ -48,6 +48,8 @@ interface LaunchPadProps {
   /** The API answered, but delivered no packs. */
   empty?: boolean;
   apiBase?: string;
+  /** 'trainer' rewords the call to action: the same click opens a question, not an analysis. */
+  mode?: 'analyze' | 'trainer';
   onReload?: () => void;
   formatTimestamp?: (iso: string) => string;
   className?: string;
@@ -89,6 +91,7 @@ export function LaunchPad({
   unavailable = false,
   empty = false,
   apiBase = '/api',
+  mode = 'analyze',
   onReload,
   formatTimestamp = (iso) => iso,
   className = '',
@@ -337,7 +340,19 @@ export function LaunchPad({
           }
         >
           {isRunning ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
-          <span>{isRunning ? 'Analyzing' : selected ? 'Start attack' : `Start on ${spotlight?.name ?? '—'}`}</span>
+          <span>
+            {isRunning
+              ? mode === 'trainer'
+                ? 'Loading the question'
+                : 'Analyzing'
+              : mode === 'trainer'
+                ? selected
+                  ? 'Open the trainer'
+                  : `Train on ${spotlight?.name ?? '—'}`
+                : selected
+                  ? 'Start attack'
+                  : `Start on ${spotlight?.name ?? '—'}`}
+          </span>
           {!isRunning && spotlight && <ArrowRight size={16} aria-hidden="true" />}
         </button>
       </footer>

@@ -39,6 +39,14 @@ export type {
   WorkloadNode,
 } from '@/lib/engine/types';
 
+/** Trainer (quiz) mode payloads, defined in lib/api/quiz.ts. */
+export type {
+  QuizGrade,
+  QuizOption,
+  QuizPreview,
+  QuizRevealedCandidate,
+} from '@/lib/api/quiz';
+
 import type {
   AttackPath,
   BusinessWorkflow,

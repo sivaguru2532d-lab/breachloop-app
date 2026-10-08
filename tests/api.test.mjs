@@ -331,3 +331,137 @@ describe('degraded environments', () => {
     assert.ok(json.degradation_notes.some((note) => /ANTHROPIC_API_KEY is not configured/.test(note)));
   });
 });
+
+describe('trainer (quiz) mode', () => {
+  /** Every field a learner may see before committing. Anything else is the answer. */
+  const ALLOWED_OPTION_KEYS = ['id', 'kind', 'title', 'action_type', 'target_arn'];
+
+  it('withholds every verdict from the preview, for all 12 packs', async () => {
+    const { json: list } = await get(baseA, '/api/scenarios');
+    assert.equal(list.scenarios.length, 12);
+
+    for (const summary of list.scenarios) {
+      const { status, json } = await get(baseA, `/api/quiz/preview?scenario_id=${summary.scenario_id}`);
+      assert.equal(status, 200, `${summary.scenario_id}: preview must answer`);
+      assert.equal(json.synthetic, true, `${summary.scenario_id}: preview must be labelled synthetic`);
+      assert.ok(!('simulations' in json), `${summary.scenario_id}: preview leaked the twin's verdicts`);
+
+      const expectedOptions = summary.candidate_count + (summary.scenario_type === 'benign' ? 1 : 0);
+      assert.equal(json.options.length, expectedOptions, `${summary.scenario_id}: wrong option count`);
+      assert.equal(json.options_total, expectedOptions);
+
+      for (const option of json.options) {
+        assert.deepEqual(
+          Object.keys(option).sort(),
+          [...ALLOWED_OPTION_KEYS].filter((key) => key in option).sort(),
+          `${summary.scenario_id}: option ${option.id} carries fields it should not`
+        );
+      }
+
+      // `is_broad` is the answer to the question and ground_truth is the answer key.
+      const serialized = JSON.stringify(json);
+      for (const forbidden of ['is_broad', 'ground_truth', 'expected_broad_remediation_status', 'expected_narrow_remediation_status']) {
+        assert.ok(!serialized.includes(forbidden), `${summary.scenario_id}: preview contains ${forbidden}`);
+      }
+      assert.ok(!/no path from attacker/i.test(serialized), `${summary.scenario_id}: preview leaked a twin path summary`);
+
+      // The candidate description is the giveaway in prose ("…which also halts all
+      // customer document rendering"), so compare against the pack's own text.
+      const { json: pack } = await get(baseA, `/api/scenarios/${summary.scenario_id}`);
+      for (const candidate of pack.candidate_remediations ?? []) {
+        const prose = String(candidate.description ?? '');
+        assert.ok(prose.length > 0, `${summary.scenario_id}/${candidate.id}: pack description missing`);
+        assert.ok(!serialized.includes(prose), `${summary.scenario_id}: preview leaked the description of ${candidate.id}`);
+      }
+    }
+  });
+
+  it('has exactly one correct option in every pack', async () => {
+    const { json: list } = await get(baseA, '/api/scenarios');
+
+    for (const summary of list.scenarios) {
+      const { json: preview } = await get(baseA, `/api/quiz/preview?scenario_id=${summary.scenario_id}`);
+      const grades = await Promise.all(
+        preview.options.map((option) =>
+          get(baseA, '/api/quiz/grade', postBody({ scenario_id: summary.scenario_id, option_id: option.id })).then((r) => ({
+            option: option.id,
+            status: r.status,
+            ...r.json,
+          }))
+        )
+      );
+
+      for (const grade of grades) {
+        assert.equal(grade.status, 200, `${summary.scenario_id}/${grade.option}: grading must answer`);
+        assert.equal(grade.graded, true, `${summary.scenario_id}/${grade.option}: must be graded, not skipped`);
+        assert.equal(grade.synthetic, true);
+      }
+      const correct = grades.filter((grade) => grade.correct === true);
+      assert.equal(correct.length, 1, `${summary.scenario_id}: ${grades.length} options, ${correct.length} correct — the question is not well posed`);
+      assert.deepEqual(correct[0].revealed.correct_option_ids, [correct[0].option_id]);
+    }
+  });
+
+  it('marks the scoped fix correct and the broad one wrong on an attack pack', async () => {
+    const { json: preview } = await get(baseA, '/api/quiz/preview?scenario_id=bucket-policy-tamper');
+    const chosen = preview.options.find((option) => /Block|Deny|bucket/i.test(option.title));
+    const { status, json } = await get(baseA, '/api/quiz/grade', postBody({ scenario_id: 'bucket-policy-tamper', option_id: chosen.id }));
+    assert.equal(status, 200);
+    assert.equal(json.correct, true, `${chosen.title} should be the right call`);
+    assert.ok(json.revealed.candidates.length === 2, 'both candidates must be revealed after committing');
+    const broad = json.revealed.candidates.find((candidate) => candidate.is_broad);
+    assert.equal(broad.status, 'rejected');
+    assert.ok(broad.broken_workflows.length > 0, 'the broad fix must show what it broke');
+    assert.ok(/Document Rendering/.test(broad.broken_workflows.join(',')));
+    assert.ok(typeof json.revealed.expected === 'object', 'the answer key is revealed post-commit');
+    assert.ok(/scope the denial/i.test(json.explanation), `explanation must teach the reason: ${json.explanation}`);
+  });
+
+  it('grades benign packs on scenario type, so "no change" is the only right answer', async () => {
+    const { json: preview } = await get(baseA, '/api/quiz/preview?scenario_id=benign-key-rotation');
+    assert.ok(preview.options.some((option) => option.id === 'no-action'), 'benign packs offer the no-change option');
+    assert.equal(preview.scenario_type, 'benign');
+
+    const noAction = await get(baseA, '/api/quiz/grade', postBody({ scenario_id: 'benign-key-rotation', option_id: 'no-action' }));
+    assert.equal(noAction.json.correct, true);
+    assert.ok(/false-positive|legitimate/i.test(noAction.json.explanation));
+
+    // benign-release-promotion is the pack where the twin reports a verified narrow
+    // fix: grading on scenario_type keeps "apply a control" wrong, which is the point.
+    const applied = await get(baseA, '/api/quiz/grade', postBody({ scenario_id: 'benign-release-promotion', option_id: 'fix-narrow-01' }));
+    assert.equal(applied.status, 200);
+    assert.equal(applied.json.correct, false, 'remediating legitimate activity is not correct even if the fix verifies');
+  });
+
+  it('rejects bad requests instead of guessing an answer', async () => {
+    const missing = await get(baseA, '/api/quiz/preview');
+    assert.equal(missing.status, 400);
+
+    const ghost = await get(baseA, '/api/quiz/preview?scenario_id=definitely-not-here');
+    assert.equal(ghost.status, 404);
+
+    const noOption = await get(baseA, '/api/quiz/grade', postBody({ scenario_id: 'compromised-role' }));
+    assert.equal(noOption.status, 400);
+
+    const bogusOption = await get(baseA, '/api/quiz/grade', postBody({ scenario_id: 'compromised-role', option_id: 'fix-lucky-99' }));
+    assert.equal(bogusOption.status, 400, 'an unknown option is a client bug, not a wrong answer');
+    assert.ok(/is not one of/.test(bogusOption.json.detail));
+
+    const malformed = await get(baseA, '/api/quiz/grade', postBody('{"scenario_id":'));
+    assert.ok(malformed.status === 400 || malformed.status === 200, 'malformed JSON must never 500');
+  });
+
+  it('does not score an attempt when the pack itself is broken', async () => {
+    const { json } = await get(baseB, '/api/quiz/preview?scenario_id=malformed');
+    assert.ok(json.degraded === true || Array.isArray(json.options), 'the corrupt pack must still answer with something playable');
+
+    const optionId = (json.options ?? [])[0]?.id ?? 'no-action';
+    const { status, json: grade } = await get(baseB, '/api/quiz/grade', postBody({ scenario_id: 'malformed', option_id: optionId }));
+    assert.equal(status, 200, 'grading a broken pack must degrade, not 500');
+    if (grade.graded === false) {
+      assert.equal(grade.correct, false, 'an ungraded attempt must not be scored correct');
+    } else {
+      assert.equal(typeof grade.correct, 'boolean');
+    }
+  });
+});

@@ -27,10 +27,18 @@ import { DynamicBackground } from '@/components/DynamicBackground';
 import { MagneticCursor } from '@/components/MagneticCursor';
 import { ScrollReveal } from '@/components/ScrollReveal';
 import { LaunchPad } from '@/components/LaunchPad';
+import {
+  EMPTY_SCORE,
+  QuizTrainer,
+  loadTrainerScore,
+  saveTrainerScore,
+  type TrainerGrade,
+  type TrainerScore,
+} from '@/components/QuizTrainer';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { api, describeApiBase, formatTimestamp, truncateArn } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/fetch';
-import type { BenchmarkSummary, IncidentResponse, ScenarioSummary } from '@/lib/types';
+import type { QuizPreview, BenchmarkSummary, IncidentResponse, ScenarioSummary } from '@/lib/types';
 
 type NoticeTone = 'info' | 'warning' | 'danger';
 
@@ -69,6 +77,13 @@ export function SocConsole() {
   const [benchmarkData, setBenchmarkData] = useState<BenchmarkSummary | null>(null);
   const [showBenchmark, setShowBenchmark] = useState(false);
   const [providerMode, setProviderMode] = useState<'deterministic' | 'anthropic'>('deterministic');
+
+  // Trainer mode: the same packs, but the verdict is withheld until a choice is made.
+  const [mode, setMode] = useState<'analyze' | 'trainer'>('analyze');
+  const [quizPreview, setQuizPreview] = useState<QuizPreview | null>(null);
+  const [quizGrade, setQuizGrade] = useState<TrainerGrade | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [trainerScore, setTrainerScore] = useState<TrainerScore>(EMPTY_SCORE);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -187,6 +202,11 @@ export function SocConsole() {
     [pushNotice]
   );
 
+  // The score is localStorage state, so it can only arrive after hydration.
+  useEffect(() => {
+    setTrainerScore(loadTrainerScore());
+  }, []);
+
   // Initial load + background recovery on tab focus (a returning user should not
   // have to press Retry after a laptop wakes next to a recycled container).
   useEffect(() => {
@@ -211,8 +231,23 @@ export function SocConsole() {
     runToken.current += 1;
     setSelectedScenarioId(scenarioId);
     setIncidentData(null);
+    setQuizPreview(null);
+    setQuizGrade(null);
+    setQuizError(null);
     setSidebarOpen(false);
   }, []);
+
+  // Toggling mode keeps both payloads: switching back to Analyze should not cost
+  // you the run you already made, and vice versa.
+  const handleModeChange = useCallback((next: 'analyze' | 'trainer') => {
+    if (next === mode) return;
+    setMode(next);
+    if (typeof window !== 'undefined') {
+      const reduced =
+        typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+    }
+  }, [mode]);
 
   // Which AWS accounts this incident was reconstructed inside. Read off the
   // events themselves rather than hard-coded, so a pack (or a real CloudTrail
@@ -242,6 +277,9 @@ export function SocConsole() {
     runToken.current += 1;
     setIncidentData(null);
     setSelectedScenarioId(null);
+    setQuizPreview(null);
+    setQuizGrade(null);
+    setQuizError(null);
     setShowBenchmark(false);
     setSidebarOpen(false);
     if (typeof window !== 'undefined') {
@@ -249,6 +287,60 @@ export function SocConsole() {
         typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
     }
+  }, []);
+
+  const handleQuizStart = useCallback(async (scenarioId: string) => {
+    const token = ++runToken.current;
+    setIsRunning(true);
+    setQuizGrade(null);
+    setQuizError(null);
+    try {
+      const preview = await api.quizPreview(scenarioId);
+      if (token !== runToken.current) return;
+      setQuizPreview(preview);
+      setScenariosFailed(false);
+    } catch (error) {
+      if (token !== runToken.current) return;
+      setQuizPreview(null);
+      setQuizError(error instanceof Error ? error.message : 'The trainer could not load this pack.');
+    } finally {
+      if (token === runToken.current) setIsRunning(false);
+    }
+  }, []);
+
+  const handleQuizAnswer = useCallback(async (optionId: string) => {
+    const scenarioId = quizPreview?.scenario_id;
+    if (!scenarioId) return;
+    try {
+      const grade = await api.quizGrade({ scenario_id: scenarioId, option_id: optionId });
+      setQuizGrade(grade);
+      // An attempt the twin could not grade must not move the score either way.
+      if (grade.graded === false) return;
+      setTrainerScore((previous) => {
+        const streak = grade.correct ? previous.streak + 1 : 0;
+        const next: TrainerScore = {
+          answered: previous.answered + 1,
+          correct: previous.correct + (grade.correct ? 1 : 0),
+          streak,
+          bestStreak: Math.max(previous.bestStreak, streak),
+          results: { ...previous.results, [scenarioId]: grade.correct ? 'correct' : 'wrong' },
+        };
+        saveTrainerScore(next);
+        return next;
+      });
+    } catch (error) {
+      pushNotice({
+        tone: 'danger',
+        title: 'Answer not graded',
+        message: `${error instanceof Error ? error.message : 'Grading failed'} — nothing was recorded, so try again.`,
+        autoDismissMs: 8000,
+      });
+    }
+  }, [quizPreview, pushNotice]);
+
+  const handleResetScore = useCallback(() => {
+    setTrainerScore(EMPTY_SCORE);
+    saveTrainerScore(EMPTY_SCORE);
   }, []);
 
   const handleRunIncident = useCallback(async (explicitScenarioId?: string) => {
@@ -269,6 +361,13 @@ export function SocConsole() {
       });
       return;
     }
+    if (mode === 'trainer') {
+      // Same click, different contract: the trainer must not fetch the verdict.
+      setSelectedScenarioId(target);
+      await handleQuizStart(target);
+      return;
+    }
+
     const token = ++runToken.current;
     setSelectedScenarioId(target);
     setIsRunning(true);
@@ -303,7 +402,7 @@ export function SocConsole() {
     } finally {
       setIsRunning(false);
     }
-  }, [selectedScenarioId, isRunning, providerMode, pushNotice]);
+  }, [selectedScenarioId, isRunning, providerMode, pushNotice, mode, handleQuizStart]);
 
   const handleRunBenchmark = useCallback(async () => {
     try {
@@ -394,6 +493,8 @@ export function SocConsole() {
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
         onHome={handleHome}
         accountIds={accountIds}
+        mode={mode}
+        onModeChange={handleModeChange}
         isRunning={isRunning}
         hasReport={Boolean(incidentData)}
         sidebarOpen={sidebarOpen}
@@ -470,6 +571,27 @@ export function SocConsole() {
               <h2 className="empty-state__title">Connecting to BreachLoop</h2>
               <p className="empty-state__description">Loading the scenario pack from {describeApiBase()}</p>
             </div>
+          ) : mode === 'trainer' ? (
+            <ErrorBoundary label="Trainer panel">
+              <QuizTrainer
+                preview={quizPreview}
+                grade={quizGrade}
+                loading={isRunning}
+                error={quizError}
+                score={trainerScore}
+                onAnswer={(optionId) => void handleQuizAnswer(optionId)}
+                onRerun={() => (quizPreview ? void handleQuizStart(quizPreview.scenario_id) : void handleRunIncident())}
+                onPickAnother={() => {
+                  setQuizPreview(null);
+                  setQuizGrade(null);
+                  setQuizError(null);
+                  setSelectedScenarioId(null);
+                }}
+                onResetScore={handleResetScore}
+                formatTimestamp={formatTimestamp}
+                truncateArn={truncateArn}
+              />
+            </ErrorBoundary>
           ) : isRunning ? (
             <div className="empty-state animate-fade-in-up" role="status">
               <Loader2 className="empty-state__icon animate-spin" size={48} />
@@ -550,6 +672,7 @@ export function SocConsole() {
               unavailable={scenariosFailed && scenarios.length === 0}
               empty={!scenariosFailed && scenarios.length === 0}
               apiBase={describeApiBase()}
+              mode={mode}
               onReload={() => void loadScenarios()}
               formatTimestamp={formatTimestamp}
             />

@@ -44,6 +44,9 @@ let filterLaunchTargets;
 let awsDocFor;
 let shortArn;
 let serviceHintFromKey;
+let EMPTY_SCORE;
+let loadTrainerScore;
+let saveTrainerScore;
 let buildIncidentResponse;
 let truncateArn;
 let formatTimestamp;
@@ -78,6 +81,9 @@ before(async () => {
   awsDocFor = entry.awsDocFor;
   shortArn = entry.shortArn;
   serviceHintFromKey = entry.serviceHintFromKey;
+  EMPTY_SCORE = entry.EMPTY_SCORE;
+  loadTrainerScore = entry.loadTrainerScore;
+  saveTrainerScore = entry.saveTrainerScore;
 
   writeBrokenPack();
 
@@ -695,5 +701,134 @@ describe('aws identifiers and the ambient field', () => {
     assert.match(reduced, /\.bg-field__beam[\s\S]{0,60}opacity: 0\.4;/);
     assert.match(reduced, /\.btn:not\(\.btn--primary\)::after[\s\S]{0,120}display: none;/);
     assert.match(css, /--motion-fast: 0ms;/);
+    // The trainer's entrance and spinner are covered by the same contract.
+    assert.match(reduced, /\.quiz,[\s\S]{0,40}\.quiz__verdict \{[\s\S]{0,80}animation: none;/);
+    assert.match(reduced, /\.quiz__spinner \{ animation: none;/);
+    assert.ok(/@keyframes quiz-in/.test(css) && /@keyframes quiz-spin/.test(css), 'trainer keyframes missing');
+  });
+});
+
+describe('trainer mode UI', () => {
+  const previewFor = async (scenarioId) => {
+    const { json } = await get(base, `/api/quiz/preview?scenario_id=${scenarioId}`);
+    return json;
+  };
+
+  const trainerProps = (over = {}) => ({
+    preview: null,
+    grade: null,
+    loading: false,
+    error: null,
+    score: EMPTY_SCORE,
+    onAnswer: noop,
+    onRerun: noop,
+    onPickAnother: noop,
+    onResetScore: noop,
+    formatTimestamp,
+    truncateArn,
+    ...over,
+  });
+
+  it('asks for a target when nothing is loaded', () => {
+    const html = render('QuizTrainer', trainerProps());
+    assert.match(html, /Trainer mode/);
+    assert.match(html, /Pick a cloud, then decide before the twin does/);
+    assert.match(html, /Choose a target/);
+    assert.ok(!html.includes('quiz__options'), 'no options before there is a question');
+  });
+
+  it('never shows a verdict before the answer is locked in', async () => {
+    const preview = await previewFor('bucket-policy-tamper');
+    const html = render('QuizTrainer', trainerProps({ preview }));
+
+    assert.match(html, /Which response stops this path/);
+    assert.match(html, /quiz__lockin/, 'the commit control must exist');
+    assert.equal((html.match(/type="radio"/g) ?? []).length, preview.options.length, 'one radio per option');
+    assert.ok(!html.includes('quiz__verdict'), 'a verdict must not render before grading');
+    for (const forbidden of ['verified', 'rejected', 'ground_truth', 'is_broad', 'Breaks:']) {
+      assert.ok(!html.includes(forbidden), `pre-commit trainer shows "${forbidden}"`);
+    }
+    // The evidence is real: path steps are linkable identifiers, not labels.
+    assert.match(html, /class="awsref"/);
+    assert.match(html, /Document Rendering/, 'running workflows must be visible to reason about');
+  });
+
+  it('reveals the twin, the prose and the answer key only after committing', async () => {
+    const preview = await previewFor('bucket-policy-tamper');
+    const { json: grade } = await get(base, '/api/quiz/grade', postBody({ scenario_id: preview.scenario_id, option_id: preview.options[0].id }));
+
+    const html = render('QuizTrainer', trainerProps({ preview, grade }));
+    assert.match(html, /quiz__verdict--(correct|wrong)/);
+    assert.match(html, /Answer key from the pack/);
+    assert.match(html, /expected_broad_remediation_status/, 'the pack answer key must be inspectable after the fact');
+    // `[ "]` terminator: the modifier class `quiz__reveal-item--verified` also
+    // contains the bare name, so an unanchored count would double every item.
+    assert.equal((html.match(/quiz__reveal-item[ "]/g) ?? []).length, grade.revealed.candidates.length);
+    assert.match(html, /quiz__option--truth/, 'the correct option must be marked once revealed');
+    assert.ok(!html.includes('quiz__lockin'), 'the commit control is gone once answered');
+  });
+
+  it('shows an ungraded attempt as not scored', () => {
+    const html = render('QuizTrainer', trainerProps({
+      preview: {
+        scenario_id: 'x', name: 'X', description: 'd', scenario_type: 'attack',
+        question: 'q?', instruction: 'i', options: [{ id: 'a', kind: 'remediation', title: 'A' }],
+        hypothesis: { summary: 's', attack_vector: 'v', confidence: 0.5, impacted_identities: [], impacted_resources: [], evidence_event_ids: [], unknowns: [] },
+        attack_path: { initial_compromise: '', target_resource: '', steps: [], evidence_event_ids: [] },
+        events: [], workflows: [], synthetic: true, warnings: ['SYNTHETIC'],
+      },
+      grade: { graded: false, correct: false, explanation: 'The twin could not grade this attempt.', revealed: { candidates: [], expected: {}, correct_option_ids: [] } },
+    }));
+    assert.match(html, /Not scored/);
+    assert.match(html, /quiz__verdict--ungraded/);
+  });
+
+  it('keeps the score local, and repairs a corrupt one', () => {
+    const store = new Map();
+    const memory = {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => store.set(key, String(value)),
+    };
+
+    assert.deepEqual(loadTrainerScore(null), EMPTY_SCORE, 'no storage means a fresh score, not a crash');
+    assert.deepEqual(loadTrainerScore({ getItem: () => 'not json' }), EMPTY_SCORE);
+    assert.deepEqual(loadTrainerScore({ getItem: () => '{"answered":3,"correct":9,"streak":-2,"results":{"a":"correct","b":"nonsense"}}' }), {
+      answered: 3,
+      correct: 3,
+      streak: 0,
+      bestStreak: 0,
+      results: { a: 'correct' },
+    }, 'correct is clamped to answered, negative streaks and unknown verdicts are dropped');
+
+    saveTrainerScore({ answered: 2, correct: 1, streak: 1, bestStreak: 1, results: { a: 'wrong' } }, memory);
+    assert.deepEqual(loadTrainerScore(memory), { answered: 2, correct: 1, streak: 1, bestStreak: 1, results: { a: 'wrong' } });
+  });
+
+  it('exposes the mode switch and rewords the launch pad', () => {
+    const baseHeader = {
+      scenario: undefined,
+      providerMode: 'deterministic',
+      onProviderChange: noop,
+      onRunIncident: noop,
+      onRunBenchmark: noop,
+      onDownloadReport: noop,
+      onToggleSidebar: noop,
+      isRunning: false,
+      hasReport: false,
+      sidebarOpen: false,
+    };
+    const trainer = render('Header', { ...baseHeader, mode: 'trainer', onModeChange: noop });
+    const analyzer = render('Header', { ...baseHeader, mode: 'analyze', onModeChange: noop });
+    assert.equal((trainer.match(/header__mode--active/g) ?? []).length, 1, 'exactly one mode may look active');
+    assert.match(trainer, /aria-pressed="true"[^>]*title="Trainer:|title="Trainer:[^"]*" aria-pressed="true"/);
+    assert.match(analyzer, /aria-pressed="true"/);
+    assert.ok(!render('Header', baseHeader).includes('header__modes'), 'no switch without a handler to switch to');
+
+    const packs = [{ scenario_id: 'x', name: 'Payroll Bucket', description: 'd', scenario_type: 'attack', event_count: 1, workflow_count: 1, candidate_count: 2 }];
+    const trainPad = render('LaunchPad', { scenarios: packs, selectedScenarioId: null, onSelect: noop, onStart: noop, mode: 'trainer' });
+    const analyzePad = render('LaunchPad', { scenarios: packs, selectedScenarioId: null, onSelect: noop, onStart: noop });
+    assert.match(trainPad, /Train on Payroll Bucket/);
+    assert.ok(!trainPad.includes('Start on Payroll Bucket'), 'the pad must say what the click will do');
+    assert.match(analyzePad, /Start on Payroll Bucket/);
   });
 });

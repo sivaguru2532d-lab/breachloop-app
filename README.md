@@ -34,6 +34,11 @@ narrow fix blocks the attacker and preserves the workflow. Every candidate is si
   deliberately does **not** link into the AWS console: these resources exist only in a scenario pack, and a
   working-looking console link is precisely what would let simulated data pass for live infrastructure. The
   header also states which account the incident was reconstructed inside, tinted as synthetic.
+- **Trainer mode** — the same packs as one-question-per-pack drills: the preview carries the evidence and the
+  candidate fixes by name, and *nothing* that betrays the verdict. Commit, and the twin's real status, the
+  workflows each fix breaks and the pack's answer key are revealed together. Benign packs add a "no change"
+  option and are graded on scenario type — applying a control to legitimate activity is wrong even when the
+  control would verify. Score is kept in `localStorage`, not on the server, so the API stays stateless.
 - **12-scenario benchmark** — 7 attack, 5 benign, ground-truth labelled, with a synthetic-scorecard modal.
 - **100% synthetic and offline** — no cloud credentials, no runtime egress, no provider required. The app never
   fetches anything outside `/api`; the only outbound navigation is a link the user clicks in their own browser.
@@ -92,6 +97,9 @@ breachloop-app/
 | `GET` | `/api/incidents/{runId}` | stored run |
 | `GET` | `/api/incidents/{runId}/report` | stored report, recomputed from the pack if the run only survives in memory |
 | `POST` | `/api/incidents/{runId}/simulate` | `{ "remediation_id": "…", "scope": "broad"\|"narrow" }` |
+| `POST` | `/api/quiz/preview` | `{ "scenario_id": "…" }` (or `?scenario_id=`) — trainer view: hypothesis, path, events, workflows, candidate titles; **no** twin status, no candidate description, no `is_broad`, no `ground_truth` |
+| `POST` | `/api/quiz/grade` | `{ "scenario_id": "…", "option_id": "…" }` — after the learner commits: twin verdicts for every candidate, the pack's expected labels, and `graded: false` when the attempt could not be scored |
+| `GET` | `/api/quiz` | which packs are playable in the trainer, and how many options each has |
 | `POST` \| `GET` | `/api/benchmark/run` | synthetic scorecard + disclaimer |
 | `GET` | `/api/reports`, `/api/reports/{runId}` | evidence reports, `?format=jsonl\|csv` and `?download=1` |
 

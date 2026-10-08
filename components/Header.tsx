@@ -21,6 +21,9 @@ interface HeaderProps {
   onHome?: () => void;
   /** AWS account IDs the reconstructed incident actually lives in. */
   accountIds?: string[];
+  /** Console mode; the trainer withholds every verdict until an answer is locked. */
+  mode?: 'analyze' | 'trainer';
+  onModeChange?: (mode: 'analyze' | 'trainer') => void;
   isRunning: boolean;
   hasReport: boolean;
   sidebarOpen: boolean;
@@ -37,6 +40,8 @@ export function Header({
   onToggleSidebar,
   onHome,
   accountIds,
+  mode = 'analyze',
+  onModeChange,
   isRunning,
   hasReport,
   sidebarOpen,
@@ -74,6 +79,31 @@ export function Header({
                 <AwsRef value={id} label={id} />
               </span>
             ))}
+          </div>
+        )}
+
+        {onModeChange && (
+          <div className="header__modes" role="group" aria-label="Console mode">
+            <button
+              type="button"
+              className={`header__mode${mode === 'analyze' ? ' header__mode--active' : ''}`}
+              onClick={() => onModeChange('analyze')}
+              aria-pressed={mode === 'analyze'}
+              disabled={isRunning}
+              title="Full console: hypothesis, graph, timeline, twin and remediation lab"
+            >
+              Analyze
+            </button>
+            <button
+              type="button"
+              className={`header__mode${mode === 'trainer' ? ' header__mode--active' : ''}`}
+              onClick={() => onModeChange('trainer')}
+              aria-pressed={mode === 'trainer'}
+              disabled={isRunning}
+              title="Trainer: pick a response first, see the twin's verdict after you commit"
+            >
+              Trainer
+            </button>
           </div>
         )}
 
