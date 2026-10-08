@@ -186,7 +186,7 @@ describe('console renders real payloads', () => {
         const attackEdges = (graphHtml.match(/url\(#arrowhead-attack\)/g) ?? []).length;
         assert.ok(attackEdges > 0, `${summary.scenario_id}: no attack-path edge drawn`);
       }
-      assert.match(render('Header', {
+      const headerHtml = render('Header', {
         scenario: summary,
         providerMode: 'deterministic',
         onProviderChange: noop,
@@ -194,10 +194,20 @@ describe('console renders real payloads', () => {
         onRunBenchmark: noop,
         onDownloadReport: noop,
         onToggleSidebar: noop,
+        onHome: noop,
         isRunning: false,
         hasReport: true,
         sidebarOpen: false,
-      }), /Run Incident/);
+      });
+      assert.match(headerHtml, /Run Incident/);
+      // Home is the "start over" control: labelled, and first in the actions.
+      assert.match(headerHtml, /aria-label="Home — back to target selection"/);
+      const homeAt = headerHtml.indexOf('header__home');
+      assert.ok(homeAt > -1, 'home button missing from the header');
+      assert.ok(
+        homeAt < headerHtml.indexOf('aria-label="Open sidebar"'),
+        'home must lead the action group, not trail it'
+      );
     }
   });
 
@@ -508,7 +518,10 @@ describe('panels survive hostile payloads', () => {
       }
     }
     try {
-      render('Header', { scenario: undefined, providerMode: 'anthropic', onProviderChange: noop, onRunIncident: noop, onRunBenchmark: noop, onDownloadReport: noop, onToggleSidebar: noop, isRunning: true, hasReport: false, sidebarOpen: true });
+      (() => {
+        const bare = render('Header', { scenario: undefined, providerMode: 'anthropic', onProviderChange: noop, onRunIncident: noop, onRunBenchmark: noop, onDownloadReport: noop, onToggleSidebar: noop, isRunning: true, hasReport: false, sidebarOpen: true });
+        assert.ok(!bare.includes('header__home'), 'home must only render when a handler exists to act on it');
+      })();
       render('BenchmarkModal', { isOpen: true, onClose: noop, benchmark: null });
       render('EvidenceReportView', { report: null, onDownload: noop });
     } catch (error) {

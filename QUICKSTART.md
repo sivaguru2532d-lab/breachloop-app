@@ -15,7 +15,9 @@ No `.env`, no Python, no second process. If you want the production path: `npm r
    pre-run briefing — services touched, CloudTrail window, identities, sensitive resources — drawn over a live
    topology map. A **recommended first run** is spotlighted, so `Enter` launches immediately; or search
    (`secretsmanager`, `kms`, `snapshot`…), filter by scope, and press **Start attack**. `↑`/`↓` walk targets,
-   double-click a card to launch it directly, `/` focuses search, `Esc` clears it.
+   double-click a card to launch it directly, `/` focuses search, `Esc` clears it. The **Home** button in the
+   header returns to this screen from an analysis (it clears the current incident view; nothing is deleted —
+   the twin re-runs deterministically).
 2. The **hypothesis bar** states the attacker's entry point, the objective, and a confidence score. Selecting a
    different target in the sidebar returns you to the launch pad with that target already locked.
 3. The **graph** pulses on the compromised principal and the targeted resource; red edges are the attack path,

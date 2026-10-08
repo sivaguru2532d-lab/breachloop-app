@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Menu, Download, ExternalLink, FileJson, Zap, Shield } from 'lucide-react';
+import { House, Menu, Download, ExternalLink, FileJson, Zap, Shield } from 'lucide-react';
 import type { ScenarioSummary } from '@/lib/types';
 
 interface HeaderProps {
@@ -16,6 +16,8 @@ interface HeaderProps {
   /** Optional: exports the canonical incident event log (JSONL). */
   onDownloadEventLog?: () => void;
   onToggleSidebar: () => void;
+  /** Optional: back to the launch pad (clears the current incident view). */
+  onHome?: () => void;
   isRunning: boolean;
   hasReport: boolean;
   sidebarOpen: boolean;
@@ -30,6 +32,7 @@ export function Header({
   onDownloadReport,
   onDownloadEventLog,
   onToggleSidebar,
+  onHome,
   isRunning,
   hasReport,
   sidebarOpen,
@@ -72,6 +75,18 @@ export function Header({
       </div>
 
       <div className="header__actions">
+        {onHome && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--icon header__home"
+            onClick={onHome}
+            aria-label="Home — back to target selection"
+            title="Home — back to target selection"
+          >
+            <House size={18} />
+          </button>
+        )}
+
         <button
           className="btn btn--ghost btn--icon"
           onClick={onToggleSidebar}

@@ -72,6 +72,8 @@ export function SocConsole() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
+  /** Bumped on home/select so an in-flight run cannot land after it was dismissed. */
+  const runToken = useRef(0);
   const [recovering, setRecovering] = useState(false);
 
   const noticesRef = useRef<Notice[]>([]);
@@ -206,9 +208,25 @@ export function SocConsole() {
   );
 
   const handleScenarioSelect = useCallback((scenarioId: string) => {
+    runToken.current += 1;
     setSelectedScenarioId(scenarioId);
     setIncidentData(null);
     setSidebarOpen(false);
+  }, []);
+
+  // Home: back to the launch pad. Nothing is fetched and nothing is lost — the
+  // run can always be re-executed, which is the point of a deterministic twin.
+  const handleHome = useCallback(() => {
+    runToken.current += 1;
+    setIncidentData(null);
+    setSelectedScenarioId(null);
+    setShowBenchmark(false);
+    setSidebarOpen(false);
+    if (typeof window !== 'undefined') {
+      const reduced =
+        typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+    }
   }, []);
 
   const handleRunIncident = useCallback(async (explicitScenarioId?: string) => {
@@ -229,6 +247,7 @@ export function SocConsole() {
       });
       return;
     }
+    const token = ++runToken.current;
     setSelectedScenarioId(target);
     setIsRunning(true);
     try {
@@ -236,7 +255,8 @@ export function SocConsole() {
         scenario_id: target,
         provider_mode: providerMode,
       });
-      setIncidentData(result.data);
+      // A newer run, or a Home press, supersedes this response.
+      if (token === runToken.current) setIncidentData(result.data);
       setScenariosFailed(false);
       for (const note of result.degradation.notes) {
         pushNotice({ tone: 'warning', title: 'Run completed with fallbacks', message: note });
@@ -350,6 +370,7 @@ export function SocConsole() {
         onDownloadReport={handleDownloadReport}
         onDownloadEventLog={incidentData ? () => void handleDownloadEventLog() : undefined}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        onHome={handleHome}
         isRunning={isRunning}
         hasReport={Boolean(incidentData)}
         sidebarOpen={sidebarOpen}

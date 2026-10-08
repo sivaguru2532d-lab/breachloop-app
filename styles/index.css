@@ -435,6 +435,24 @@ body.has-magnetic-cursor textarea {
   stroke: var(--text-inverse);
 }
 
+/* Home sits first in the action group and reads as the "start over" control,
+   so it carries the accent rather than the neutral ghost tint. */
+.header__home {
+  border-color: var(--border-emphasis);
+  color: var(--text-primary);
+}
+
+.header__home:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-primary-soft);
+}
+
+.header__home:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 .header__title {
   font-family: var(--font-ui);
   font-weight: 700;
