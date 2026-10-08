@@ -41,6 +41,9 @@ let hostileServer;
 let hostileBase;
 let render;
 let filterLaunchTargets;
+let awsDocFor;
+let shortArn;
+let serviceHintFromKey;
 let buildIncidentResponse;
 let truncateArn;
 let formatTimestamp;
@@ -72,6 +75,9 @@ before(async () => {
   truncateArn = entry.truncateArn;
   formatTimestamp = entry.formatTimestamp;
   filterLaunchTargets = entry.filterLaunchTargets;
+  awsDocFor = entry.awsDocFor;
+  shortArn = entry.shortArn;
+  serviceHintFromKey = entry.serviceHintFromKey;
 
   writeBrokenPack();
 
@@ -126,6 +132,33 @@ function propsFor(view) {
     'TwinStateInspector': { baselineWorkflows: view.workflows, simulations: view.simulations },
     'EvidenceReportView': { report: view.report, onDownload: noop },
   };
+}
+
+/**
+ * The text of each `@media (prefers-reduced-motion: reduce)` block. Matched by
+ * braces rather than "everything after the last header", which would silently
+ * move the contract the moment a later feature appended its own block.
+ */
+function reducedMotionBlocks(css) {
+  const marker = '@media (prefers-reduced-motion: reduce)';
+  const blocks = [];
+  let from = 0;
+  for (;;) {
+    const start = css.indexOf(marker, from);
+    if (start === -1) return blocks;
+    const open = css.indexOf('{', start);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end += 1) {
+      if (css[end] === '{') depth += 1;
+      else if (css[end] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    blocks.push(css.slice(open + 1, end));
+    from = end + 1;
+  }
 }
 
 async function viewFor(scenarioId) {
@@ -382,7 +415,7 @@ describe('console renders real payloads', () => {
 
   it('keeps launch-pad motion inside the reduced-motion contract', () => {
     const css = fs.readFileSync(path.join(ROOT, 'styles', 'index.css'), 'utf8');
-    const reduced = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    const reduced = reducedMotionBlocks(css).join('\n');
     // Staggered entrances and the dash-flow both use animation-delay; the global
     // block only zeroes duration, so the pad must zero delays or cards pop in.
     assert.match(reduced, /animation-delay: 0ms !important/);
@@ -537,5 +570,130 @@ describe('panels survive hostile payloads', () => {
     assert.equal(truncateArn(undefined), '—');
     assert.equal(truncateArn('short:arn'), 'short:arn');
     assert.ok(truncateArn(`arn:aws:s3:::${'x'.repeat(80)}`).length <= 51);
+  });
+});
+
+describe('aws identifiers and the ambient field', () => {
+  const ARNS = {
+    role: 'arn:aws:iam::123456789012:role/acme-payroll-analytics',
+    bucket: 'arn:aws:s3:::acme-payroll-us',
+    secret: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-Abcd12',
+    key: 'arn:aws:kms:us-east-1:123456789012:key/1111aaaa-2222-bbbb-3333-cccc4444dddd',
+    snapshot: 'arn:aws:rds:us-east-1:123456789012:snapshot:prod-db-2026-08-22',
+  };
+
+  it('links every service to the matching AWS documentation', () => {
+    const expected = {
+      role: '/IAM/latest/UserGuide/id_roles.html',
+      bucket: '/AmazonS3/latest/userguide/bucket-policies.html',
+      secret: '/secretsmanager/latest/userguide/intro.html',
+      key: '/kms/latest/developerguide/overview.html',
+      snapshot: '/AmazonRDS/latest/UserGuide/USER_ShareSnapshot.html',
+    };
+    for (const [name, arn] of Object.entries(ARNS)) {
+      const html = render('AwsRef', { value: arn });
+      assert.match(html, new RegExp(`href="https://docs\\.aws\\.amazon\\.com${expected[name].replace(/[/.]/g, '\\$&')}"`), `${name}: wrong doc target`);
+      assert.match(html, /target="_blank"/, `${name}: external links open in a tab`);
+      assert.match(html, /rel="noopener noreferrer"/, `${name}: external link must not leak the opener`);
+    }
+  });
+
+  it('never links into the AWS console, because nothing exists there', () => {
+    for (const arn of Object.values(ARNS)) {
+      const html = render('AwsRef', { value: arn });
+      assert.ok(!html.includes('console.aws.amazon.com'), `${arn} must not point at the console`);
+      // The disclaimer travels with the identifier, not just with the page.
+      assert.match(html, /synthetic scenario pack/);
+      assert.match(html, /Opens AWS documentation, not the AWS console/);
+    }
+  });
+
+  it('routes the account id to AWS account-identifier docs and labels it synthetic', () => {
+    const html = render('AwsRef', { value: '123456789012', label: '123456789012' });
+    assert.match(html, /href="https:\/\/docs\.aws\.amazon\.com\/accounts\/latest\/reference\/manage-acct-identifiers\.html"/);
+    assert.match(html, /example account AWS uses in its own documentation/);
+  });
+
+  it('falls back to the ARN reference for services with no curated page', () => {
+    assert.equal(awsDocFor('arn:aws:sqs:us-east-1:123456789012:queue').href.includes('aws-arns-and-namespaces'), true);
+    // A bare name is only resolvable with a hint; without one it still lands somewhere valid.
+    assert.equal(awsDocFor('acme-nightly-runner', 'lambda').label, 'Lambda documentation');
+    assert.equal(awsDocFor('not-an-arn').href, 'https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html');
+  });
+
+  it('infers the service from a bare parameter name', () => {
+    assert.equal(serviceHintFromKey('bucket_name'), 's3');
+    assert.equal(serviceHintFromKey('denied_principal_arn'), 'iam');
+    assert.equal(serviceHintFromKey('db_snapshot_identifier'), 'rds');
+    assert.equal(serviceHintFromKey('note'), undefined, 'a non-resource key must not be guessed');
+  });
+
+  it('links the exact resource a remediation would touch', async () => {
+    const { json: list } = await get(base, '/api/scenarios');
+    const summary = list.scenarios.find(item => item.scenario_type === 'attack') ?? list.scenarios[0];
+    const lab = render('RemediationLab', propsFor(await viewFor(summary.scenario_id)).RemediationLab);
+    assert.ok(lab.includes('class="awsref"') || lab.includes('awsref"'), 'parameters must stay inspectable');
+    for (const href of lab.match(/href="[^"]*"/g) ?? []) {
+      assert.ok(href.includes('https://docs.aws.amazon.com/'), `unexpected remediation link: ${href}`);
+    }
+  });
+
+  it('survives the shapes that used to blank panels', () => {
+    assert.equal(shortArn(undefined), '—');
+    assert.equal(shortArn(''), '—');
+    assert.equal(shortArn('arn:aws:iam::123456789012:role/acme-payroll'), 'acme-payroll');
+    assert.equal(shortArn('plain'), 'plain');
+    for (const value of [undefined, null, '', 0, {}, []]) {
+      assert.doesNotThrow(() => render('AwsRef', { value }), `AwsRef(${JSON.stringify(value)}) threw`);
+    }
+  });
+
+  it('renders identifiers as links in the live incident views', async () => {
+    const { json: list } = await get(base, '/api/scenarios');
+    const summary = list.scenarios.find(item => item.scenario_type === 'attack') ?? list.scenarios[0];
+    const view = await viewFor(summary.scenario_id);
+
+    const timeline = render('EventTimeline', propsFor(view).EventTimeline);
+    assert.match(timeline, /class="awsref"/, 'event actors must be inspectable');
+    assert.ok(!timeline.includes('console.aws.amazon.com'), 'timeline must not offer a console link');
+
+    const header = render('Header', {
+      scenario: summary,
+      providerMode: 'deterministic',
+      onProviderChange: noop,
+      onRunIncident: noop,
+      onRunBenchmark: noop,
+      onDownloadReport: noop,
+      onToggleSidebar: noop,
+      onHome: noop,
+      accountIds: ['123456789012'],
+      isRunning: false,
+      hasReport: true,
+      sidebarOpen: false,
+    });
+    assert.match(header, /header__account-value--synthetic/, 'the placeholder account must not read like a live one');
+    assert.match(header, /manage-acct-identifiers/);
+  });
+
+  it('keeps the ambient field decorative, looped, and switchable', () => {
+    const html = render('DynamicBackground', {});
+    assert.match(html, /class="bg-field" aria-hidden="true"/, 'the field must be hidden from assistive tech');
+    assert.match(html, /class="dynamic-background"/);
+    assert.match(html, /bg-field__grid[\s"]/);
+    assert.match(html, /bg-field__beam[\s"]/);
+
+    const css = fs.readFileSync(path.join(ROOT, 'styles', 'index.css'), 'utf8');
+    for (const name of ['bg-grid-drift', 'bg-beam-travel']) {
+      assert.ok(css.includes(`@keyframes ${name}`), `${name} keyframes missing`);
+      assert.ok(css.includes(`animation: ${name}`), `${name} is declared but never applied`);
+    }
+    // The app-wide reduced-motion contract: both loops stopped outright (a
+    // zero-duration infinite animation still re-runs on delay), the button sheen
+    // removed rather than snapped, and the timing tokens flattened at :root.
+    const reduced = reducedMotionBlocks(css).join('\n');
+    assert.match(reduced, /\.bg-field__grid,[\s\S]{0,40}animation: none;/);
+    assert.match(reduced, /\.bg-field__beam[\s\S]{0,60}opacity: 0\.4;/);
+    assert.match(reduced, /\.btn:not\(\.btn--primary\)::after[\s\S]{0,120}display: none;/);
+    assert.match(css, /--motion-fast: 0ms;/);
   });
 });

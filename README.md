@@ -29,8 +29,14 @@ narrow fix blocks the attacker and preserves the workflow. Every candidate is si
   publicly-exposed resources, workflow criticality) over a live micro-topology map; a spotlight arms a
   recommended first run; search, scope chips and `↑ ↓ Enter / Esc` cover picking a target by keyboard. Expected
   remediation verdicts are deliberately **not** shown — the pad previews scope, not the answer key.
+- **Inspectable identifiers** — every ARN, account ID and remediation parameter that names a resource is a
+  link to the matching AWS documentation page (IAM roles, S3 bucket policies, snapshot sharing, IMDS…). It
+  deliberately does **not** link into the AWS console: these resources exist only in a scenario pack, and a
+  working-looking console link is precisely what would let simulated data pass for live infrastructure. The
+  header also states which account the incident was reconstructed inside, tinted as synthetic.
 - **12-scenario benchmark** — 7 attack, 5 benign, ground-truth labelled, with a synthetic-scorecard modal.
-- **100% synthetic and offline** — no cloud credentials, no egress at runtime, no provider required.
+- **100% synthetic and offline** — no cloud credentials, no runtime egress, no provider required. The app never
+  fetches anything outside `/api`; the only outbound navigation is a link the user clicks in their own browser.
 
 ## Quick start
 

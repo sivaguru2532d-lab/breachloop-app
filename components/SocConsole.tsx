@@ -214,6 +214,28 @@ export function SocConsole() {
     setSidebarOpen(false);
   }, []);
 
+  // Which AWS accounts this incident was reconstructed inside. Read off the
+  // events themselves rather than hard-coded, so a pack (or a real CloudTrail
+  // extract one day) that spans several accounts would show all of them.
+  const accountIds = useMemo(() => {
+    const ids = new Set<string>();
+    const ARN_ACCOUNT = /arn:aws[s]?:[^:]*:[^:]*:(\d{12}):/;
+    const scan = (value: unknown) => {
+      if (typeof value !== 'string') return;
+      const match = ARN_ACCOUNT.exec(value);
+      if (match) ids.add(match[1]);
+    };
+    const events = Array.isArray(incidentData?.events) ? incidentData.events : [];
+    events.forEach(event => {
+      scan(event.actor_arn);
+      scan(event.target_arn);
+    });
+    const hypothesis = incidentData?.hypothesis;
+    (Array.isArray(hypothesis?.impacted_identities) ? hypothesis.impacted_identities : []).forEach(scan);
+    (Array.isArray(hypothesis?.impacted_resources) ? hypothesis.impacted_resources : []).forEach(scan);
+    return [...ids].sort();
+  }, [incidentData]);
+
   // Home: back to the launch pad. Nothing is fetched and nothing is lost — the
   // run can always be re-executed, which is the point of a deterministic twin.
   const handleHome = useCallback(() => {
@@ -371,6 +393,7 @@ export function SocConsole() {
         onDownloadEventLog={incidentData ? () => void handleDownloadEventLog() : undefined}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
         onHome={handleHome}
+        accountIds={accountIds}
         isRunning={isRunning}
         hasReport={Boolean(incidentData)}
         sidebarOpen={sidebarOpen}

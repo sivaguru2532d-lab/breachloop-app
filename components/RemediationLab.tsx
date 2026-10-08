@@ -2,6 +2,7 @@
  * RemediationLab - Side-by-side comparison of remediation candidates with verification status
  */
 
+import { AwsRef, serviceHintFromKey } from '@/components/AwsRef';
 import React from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Shield, Zap } from 'lucide-react';
 import type { CandidateAction, UiSimulationResult } from '@/lib/types';
@@ -37,6 +38,22 @@ function getStatusBadge(status: 'verified' | 'rejected' | 'unverified') {
         </span>
       );
   }
+}
+
+/**
+ * Remediation parameters name the exact resource a fix would touch. Anything that
+ * reads as an identifier becomes an AwsRef, so a reviewer can check what the
+ * action permits without leaving the console; everything else stays plain text.
+ */
+const IDENTIFIER_KEY = /(?:_arn|_name|bucket|role|secret|key|resource|instance|snapshot)$/i;
+const PLAIN_IDENTIFIER = /^[\w][\w.:/@-]{2,}$/;
+
+function renderParamValue(key: string, value: unknown): React.ReactNode {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  const text = String(value);
+  const isIdentifier = text.startsWith('arn:aws') || (IDENTIFIER_KEY.test(key) && PLAIN_IDENTIFIER.test(text));
+  return isIdentifier ? <AwsRef value={text} service={serviceHintFromKey(key)} /> : text;
 }
 
 function getStatusColor(status: 'verified' | 'rejected' | 'unverified') {
@@ -108,7 +125,7 @@ export function RemediationLab({
                     <div key={key} style={{ marginBottom: 'var(--space-1)' }}>
                       <span style={{ color: 'var(--accent-info)' }}>{key}:</span>{' '}
                       <span style={{ color: 'var(--text-primary)' }}>
-                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        {renderParamValue(key, value)}
                       </span>
                     </div>
                   ))}

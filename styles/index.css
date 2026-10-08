@@ -215,14 +215,68 @@ body.has-magnetic-cursor textarea {
 }
 
 /* Dynamic Background */
-.dynamic-background {
+/* Ambient field. The canvas is the ember layer; the grid and the beam are the
+   parts that physically travel across the screen. `inset: -25%` on the grid keeps
+   its edges off-screen while it drifts, and translating by exactly one tile makes
+   the loop seamless. Blur is avoided on purpose: gradients are soft enough and a
+   blurred fixed layer would cost every frame of scroll. */
+.bg-field {
   position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-field .dynamic-background {
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
-  pointer-events: none;
+}
+
+.bg-field__grid {
+  position: absolute;
+  inset: -25%;
+  background-image:
+    linear-gradient(to right, rgba(244, 238, 229, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(244, 238, 229, 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 78% 68% at 50% 42%, #000 0%, transparent 76%);
+  mask-image: radial-gradient(ellipse 78% 68% at 50% 42%, #000 0%, transparent 76%);
+  animation: bg-grid-drift 44s linear infinite;
+  will-change: transform;
+}
+
+@keyframes bg-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-64px, -64px, 0); }
+}
+
+.bg-field__beam {
+  position: absolute;
+  top: -40%;
+  left: -55%;
+  width: 46%;
+  height: 180%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 138, 61, 0.10) 42%,
+    rgba(146, 168, 199, 0.07) 62%,
+    transparent 100%
+  );
+  transform: rotate(12deg) translate3d(0, 0, 0);
+  animation: bg-beam-travel 26s linear infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes bg-beam-travel {
+  0% { transform: rotate(12deg) translate3d(0, 0, 0); opacity: 0; }
+  14% { opacity: 0.95; }
+  86% { opacity: 0.95; }
+  100% { transform: rotate(12deg) translate3d(340%, 0, 0); opacity: 0; }
 }
 
 /* Magnetic Cursor System */
@@ -575,6 +629,59 @@ body.has-magnetic-cursor textarea {
   opacity: 0.4;
   cursor: not-allowed;
   filter: grayscale(0.5);
+}
+
+/* Shared button motion. `.btn--primary` already lifted, so the other variants
+   were the flat ones: they now get the same language — 1px lift, an accent
+   bloom, a one-shot sheen that sweeps across on hover, and a spring press.
+   The transitions are listed instead of `all` so layout properties can never be
+   animated by accident. */
+.btn:not(.btn--primary):not(:disabled) {
+  transition:
+    transform var(--motion-fast) var(--ease-spring),
+    box-shadow var(--motion-normal) var(--ease-out),
+    border-color var(--motion-normal) var(--ease-out),
+    background-color var(--motion-normal) var(--ease-out),
+    color var(--motion-normal) var(--ease-out);
+}
+
+.btn:not(.btn--primary):not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: var(--border-glow);
+  box-shadow: 0 6px 18px rgba(11, 13, 18, 0.55), 0 0 0 3px var(--accent-primary-soft);
+}
+
+.btn:not(.btn--primary):not(:disabled):active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 1px 4px rgba(11, 13, 18, 0.5);
+}
+
+.btn:not(.btn--primary)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 24%, rgba(255, 255, 255, 0.16) 46%, transparent 68%);
+  transform: translateX(-135%);
+  transition: transform var(--motion-very-slow) var(--ease-out);
+  pointer-events: none;
+}
+
+.btn:not(.btn--primary):not(:disabled):hover::after {
+  transform: translateX(135%);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.btn svg {
+  transition: transform var(--motion-fast) var(--ease-spring);
+}
+
+.btn:not(:disabled):hover svg {
+  transform: scale(1.09);
 }
 
 .btn--primary {
@@ -3328,4 +3435,112 @@ body,
   .launch__console { flex-direction: column; align-items: stretch; }
 
   .launch__start { justify-content: center; }
+}
+
+/* AWS identifiers you can look up.
+   They appear inside dense log rows, so they stay quiet until hovered: the dotted
+   underline says "this is a real anchor", the book icon says "this leaves the
+   app". It opens AWS documentation, never the AWS console — see
+   components/AwsRef.tsx for why that distinction is deliberate. */
+.awsref {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: inherit;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-emphasis);
+  border-radius: var(--radius-sm);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.awsref__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.awsref__icon {
+  flex: none;
+  opacity: 0;
+  transform: translateY(1px) scale(0.9);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-spring);
+}
+
+.awsref:hover {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+}
+
+.awsref:hover .awsref__icon,
+.awsref:focus-visible .awsref__icon {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.awsref:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Reduced motion: the ambient field stops outright (the canvas already draws one
+   static frame and never starts its rAF loop), and the button sheen is removed
+   rather than snapped, since an instant sweep reads as a flicker. */
+@media (prefers-reduced-motion: reduce) {
+  .bg-field__grid,
+  .bg-field__beam {
+    animation: none;
+  }
+
+  .bg-field__beam {
+    opacity: 0.4;
+    transform: rotate(12deg) translate3d(70%, 0, 0);
+  }
+
+  .btn:not(.btn--primary)::after,
+  .btn:not(.btn--primary):not(:disabled):hover::after {
+    display: none;
+  }
+
+  .btn svg,
+  .awsref__icon {
+    transition: none;
+  }
+}
+
+/* Provenance chip: which account the incident was reconstructed inside, and a
+   link that says where that ID came from. The synthetic tint is deliberate — it
+   must not read like a live-account indicator. */
+.header__account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-glass);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+}
+
+.header__account-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.header__account-value .awsref {
+  color: var(--text-secondary);
+  border-bottom-style: solid;
+}
+
+.header__account-value--synthetic .awsref {
+  color: var(--accent-warning);
 }

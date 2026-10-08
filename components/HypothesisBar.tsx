@@ -2,6 +2,7 @@
  * HypothesisBar - Incident hypothesis summary with confidence, attack vector, and evidence
  */
 
+import { AwsRef } from '@/components/AwsRef';
 import React from 'react';
 import { AlertTriangle, Target, Users, Database, HelpCircle, ArrowRight } from 'lucide-react';
 import type { IncidentHypothesis, AttackPath } from '@/lib/types';
@@ -63,7 +64,7 @@ export function HypothesisBar({
           <span className="hypothesis-bar__field-label">Initial Compromise</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <Users size={16} color="var(--accent-warning)" />
-            <span className="hypothesis-bar__field-value--mono">{truncateArn(attackPath.initial_compromise)}</span>
+            <AwsRef value={attackPath.initial_compromise} label={truncateArn(attackPath.initial_compromise)} />
           </div>
         </div>
 
@@ -71,7 +72,7 @@ export function HypothesisBar({
           <span className="hypothesis-bar__field-label">Target Resource</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <Database size={16} color="var(--accent-critical)" />
-            <span className="hypothesis-bar__field-value--mono">{truncateArn(attackPath.target_resource)}</span>
+            <AwsRef value={attackPath.target_resource} label={truncateArn(attackPath.target_resource)} />
           </div>
         </div>
 
@@ -105,7 +106,7 @@ export function HypothesisBar({
             <div className="hypothesis-bar__tags">
               {hypothesis.impacted_identities.slice(0, 4).map((arn) => (
                 <span key={arn} className="badge badge--warning" style={{ fontSize: '0.55rem' }}>
-                  {truncateArn(arn, 30)}
+                  <AwsRef value={arn} label={truncateArn(arn, 30)} />
                 </span>
               ))}
               {hypothesis.impacted_identities.length > 4 && (
@@ -123,7 +124,7 @@ export function HypothesisBar({
             <div className="hypothesis-bar__tags">
               {hypothesis.impacted_resources.slice(0, 4).map((arn) => (
                 <span key={arn} className="badge badge--attack" style={{ fontSize: '0.55rem' }}>
-                  {truncateArn(arn, 30)}
+                  <AwsRef value={arn} label={truncateArn(arn, 30)} />
                 </span>
               ))}
               {hypothesis.impacted_resources.length > 4 && (

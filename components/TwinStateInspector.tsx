@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { Activity, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { AwsRef, shortArn } from '@/components/AwsRef';
 import type { UiSimulationResult, Workflow } from '@/lib/types';
 
 interface TwinStateInspectorProps {
@@ -120,13 +121,13 @@ export function TwinStateInspector({
                             {workflow.workflow_name}
                           </td>
                           <td style={{ padding: 'var(--space-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>
-                            {workflow.principal_arn.split('/').pop() || workflow.principal_arn}
+                            <AwsRef value={workflow.principal_arn} label={shortArn(workflow.principal_arn)} />
                           </td>
                           <td style={{ padding: 'var(--space-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>
                             {workflow.required_action}
                           </td>
                           <td style={{ padding: 'var(--space-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>
-                            {workflow.target_resource_arn.split('/').pop() || workflow.target_resource_arn}
+                            <AwsRef value={workflow.target_resource_arn} label={shortArn(workflow.target_resource_arn)} />
                           </td>
                           <td style={{ padding: 'var(--space-2)', textAlign: 'center' }}>
                             {isBroken ? (

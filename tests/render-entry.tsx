@@ -18,9 +18,12 @@ import { TwinStateInspector } from '@/components/TwinStateInspector';
 import { BenchmarkModal } from '@/components/BenchmarkModal';
 import { LaunchPad } from '@/components/LaunchPad';
 import { EvidenceReportView } from '@/components/EvidenceReportView';
+import { AwsRef } from '@/components/AwsRef';
+import { DynamicBackground } from '@/components/DynamicBackground';
 import { buildIncidentResponse } from '@/lib/api/client';
 import { filterLaunchTargets } from '@/lib/api/briefing';
 import { formatTimestamp, truncateArn } from '@/lib/api/client';
+import { awsDocFor, shortArn, serviceHintFromKey } from '@/components/AwsRef';
 
 const components: Record<string, React.ComponentType<any>> = {
   SocConsole,
@@ -34,6 +37,8 @@ const components: Record<string, React.ComponentType<any>> = {
   BenchmarkModal,
   EvidenceReportView,
   LaunchPad,
+  AwsRef,
+  DynamicBackground,
 };
 
 export function render(name: string, props: Record<string, unknown>): string {
@@ -42,4 +47,4 @@ export function render(name: string, props: Record<string, unknown>): string {
   return renderToString(React.createElement(Component, props));
 }
 
-export { buildIncidentResponse, filterLaunchTargets, formatTimestamp, truncateArn };
+export { buildIncidentResponse, filterLaunchTargets, formatTimestamp, truncateArn, awsDocFor, shortArn, serviceHintFromKey };

@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { House, Menu, Download, ExternalLink, FileJson, Zap, Shield } from 'lucide-react';
+import { AwsRef, SYNTHETIC_ACCOUNT_ID } from '@/components/AwsRef';
 import type { ScenarioSummary } from '@/lib/types';
 
 interface HeaderProps {
@@ -18,6 +19,8 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   /** Optional: back to the launch pad (clears the current incident view). */
   onHome?: () => void;
+  /** AWS account IDs the reconstructed incident actually lives in. */
+  accountIds?: string[];
   isRunning: boolean;
   hasReport: boolean;
   sidebarOpen: boolean;
@@ -33,6 +36,7 @@ export function Header({
   onDownloadEventLog,
   onToggleSidebar,
   onHome,
+  accountIds,
   isRunning,
   hasReport,
   sidebarOpen,
@@ -56,6 +60,20 @@ export function Header({
               {scenario.scenario_type.toUpperCase()}
             </span>
             <span>{scenario.name}</span>
+          </div>
+        )}
+
+        {Array.isArray(accountIds) && accountIds.length > 0 && (
+          <div
+            className="header__account"
+            title="Account the events in this incident were attributed to. In this lab they are all synthetic, so the link opens AWS documentation about account identifiers rather than the AWS console."
+          >
+            <span className="header__account-label">Account</span>
+            {accountIds.map(id => (
+              <span key={id} className={`header__account-value${id === SYNTHETIC_ACCOUNT_ID ? ' header__account-value--synthetic' : ''}`}>
+                <AwsRef value={id} label={id} />
+              </span>
+            ))}
           </div>
         )}
 

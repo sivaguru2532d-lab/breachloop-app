@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { X, Search, AlertTriangle } from 'lucide-react';
+import { AwsRef } from '@/components/AwsRef';
 import type { CanonicalEvent } from '@/lib/types';
 
 interface EventTimelineProps {
@@ -108,7 +109,7 @@ export function EventTimeline({
 
               <div className="timeline__item__details">
                 <div className="timeline__actor">
-                  <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{truncateArn(event.actor_arn)}</span>
+                  <AwsRef value={event.actor_arn} label={truncateArn(event.actor_arn)} />
                 </div>
                 <div className="timeline__source-ip">
                   <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{text(event.raw_evidence?.sourceIPAddress) || '—'}</span>
@@ -117,8 +118,8 @@ export function EventTimeline({
 
               <div className="timeline__item__resource">
                 <span className="timeline__resource-label">Resource:</span>
-                <span className="timeline__resource-value" title={event.target_arn || '—'}>
-                  {event.target_arn ? truncateArn(event.target_arn) : '—'}
+                <span className="timeline__resource-value">
+                  {event.target_arn ? <AwsRef value={event.target_arn} label={truncateArn(event.target_arn)} /> : '—'}
                 </span>
               </div>
 
@@ -149,7 +150,7 @@ export function EventTimeline({
                   <DetailField label="Timestamp (UTC)" value={formatTimestamp(event.event_time)} />
                   <DetailField label="Action" value={event.action} />
                   <DetailField label="Service" value={event.service} />
-                  <DetailField label="Actor ARN" value={event.actor_arn} />
+                  <DetailField label="Actor ARN" value={<AwsRef value={event.actor_arn} />} />
                   <DetailField label="Source IP" value={text(event.raw_evidence?.sourceIPAddress) || '—'} />
                   <DetailField label="User Agent" value={text(event.raw_evidence?.userAgent) || '—'} />
                   {Boolean(event.raw_evidence?.errorCode) && (
@@ -170,7 +171,8 @@ export function EventTimeline({
 
 interface DetailFieldProps {
   label: string;
-  value: string;
+  /** Node so ARNs can render as AwsRef links rather than flat text. */
+  value: React.ReactNode;
 }
 
 function DetailField({ label, value }: DetailFieldProps) {

@@ -4,6 +4,7 @@
 
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Play, Pause, ZoomIn, ZoomOut, Minimize2, Maximize2 } from 'lucide-react';
+import { AwsRef } from '@/components/AwsRef';
 import type { AttackPath, CanonicalEvent, ScenarioDetail } from '@/lib/types';
 
 /**
@@ -774,7 +775,7 @@ function NodeDetailTooltip({ node, truncateArn, onClose }: NodeDetailTooltipProp
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ color: 'var(--text-muted)' }}>ARN:</span>
-          <span style={{ fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>{truncateArn(node.arn)}</span>
+          <AwsRef value={node.arn} label={truncateArn(node.arn)} />
         </div>
         {node.isCompromised && (
           <span className="badge badge--attack" style={{ alignSelf: 'flex-start' }}>INITIAL COMPROMISE</span>
