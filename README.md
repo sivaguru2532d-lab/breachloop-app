@@ -42,9 +42,13 @@ breachloop-app/
 
 ## 🚀 Quick Start
 
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.11+
+
 ### Frontend Development
 
-```powershell
+```bash
 # Navigate to frontend
 cd breachloop-app/frontend
 
@@ -58,7 +62,58 @@ npm run dev
 npm run build
 ```
 
-The frontend will be available at `http://localhost:5173`
+The frontend will be available at `http://127.0.0.1:5173`
+
+### Backend Development
+
+```bash
+# Navigate to backend
+cd breachloop-app/backend
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start API server
+python -m breachloop serve
+
+# Run single incident demo
+python -m breachloop demo --scenario compromised-role
+
+# Run full benchmark suite
+python -m breachloop benchmark
+```
+
+The backend API will be available at `http://127.0.0.1:8000`
+
+### Full Stack (Recommended)
+
+From the repo root:
+```bash
+# Install all dependencies
+cd breachloop-app/frontend && npm install
+cd ../backend && pip install -r requirements.txt
+
+# Start both servers (in separate terminals)
+# Terminal 1 - Backend
+cd breachloop-app/backend && python -m breachloop serve
+
+# Terminal 2 - Frontend
+cd breachloop-app/frontend && npm run dev
+```
+
+### Root-level npm scripts (for convenience)
+
+From `breachloop-app/`:
+```bash
+# Start backend
+npm run backend:serve
+
+# Build frontend
+npm run frontend:build
+
+# Start frontend dev
+npm run frontend:dev
+```
 
 ## 🎨 Design Principles
 
